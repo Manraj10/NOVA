@@ -34,17 +34,19 @@ export function allLines() {
 }
 
 export function makeAround({ hfov = 60 } = {}) {
+  let fov = hfov; // set again once the lens is known (ultra-wide sees much more)
   const world = []; // { kind, name, label, bearing|null, x, steps, at }
   const warned = new Map(); // name -> time of the last in-path warning
   let crowd = { n: 0, at: 0 }; // no compass: the most people seen in one frame lately
 
-  const bearingOf = (heading, x) => (heading == null ? null : angle(heading + (x - 0.5) * hfov));
+  const bearingOf = (heading, x) => (heading == null ? null : angle(heading + (x - 0.5) * fov));
   const known = (kind, name, bearing, x, now, seen) => seen.find(w => w.kind === kind && w.name === name && (bearing != null && w.bearing != null
     ? gap(w.bearing, bearing) <= BUCKET[kind]
     : Math.abs(w.x - x) < 0.15 && now - w.at < 12000));
 
   return {
     world,
+    set hfov(v) { fov = v; },
     // items: [{kind,name,label,x 0-1,steps,inPath}] from /api/around; heading in degrees or null.
     update(items, heading, now = Date.now()) {
       const say = [];

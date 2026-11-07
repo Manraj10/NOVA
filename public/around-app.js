@@ -12,7 +12,7 @@ const video = $('video');
 const PHONE = matchMedia('(pointer: coarse)').matches;
 const around = makeAround({ hfov: PHONE ? 50 : 60 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let heading = null, running = false, lastErrorSaid = 0, scene = '', sceneSaid = false;
+let heading = null, running = false, lastErrorSaid = 0, scene = '', sceneSaid = false, lens = 'main';
 
 voice.init();
 voice.onCaption = text => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
@@ -42,9 +42,26 @@ async function start() {
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ video: video_, audio: MIC }); }
     catch { stream = await navigator.mediaDevices.getUserMedia({ video: video_ }); }
-    video.srcObject = new MediaStream(stream.getVideoTracks());
+    const mic = stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null;
+    let track = stream.getVideoTracks()[0];
+    // 0.5x: the ultra-wide lens sees a room the way a person does. iPhone Safari lists it as its own
+    // camera ("Back Ultra Wide Camera") once permission is granted; other phones may offer zoom instead.
+    try {
+      const wide = (await navigator.mediaDevices.enumerateDevices()).find(d => d.kind === 'videoinput' && /ultra ?wide|0\.5/i.test(d.label));
+      if (wide && track.getSettings().deviceId !== wide.deviceId) {
+        const s2 = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: wide.deviceId }, width: video_.width, height: video_.height } });
+        track.stop();
+        track = s2.getVideoTracks()[0];
+        lens = 'ultra wide';
+      } else {
+        const zoom = track.getCapabilities?.().zoom;
+        if (zoom && zoom.min < 1) { await track.applyConstraints({ advanced: [{ zoom: zoom.min }] }); lens = `zoom ${zoom.min}`; }
+      }
+    } catch { /* keep the main lens */ }
+    around.hfov = lens === 'main' ? (PHONE ? 50 : 60) : (PHONE ? 85 : 100);
+    video.srcObject = new MediaStream([track]);
     await video.play();
-    if (stream.getAudioTracks().length) startEars(new MediaStream(stream.getAudioTracks()));
+    if (mic) startEars(mic);
   } catch {
     $('start').hidden = false;
     return voice.say("I can't open the camera. Allow the camera for this site, then tap again.");
@@ -165,4 +182,4 @@ $('start').addEventListener('click', start);
 // The button and the picture: what's going on right now, then everything seen so far.
 $('ask').addEventListener('click', e => { e.stopPropagation(); tellScene(); setTimeout(() => queue.push({ text: around.summary(heading), at: Date.now() }) && speakQueue(), 50); });
 video.addEventListener('click', tellAll);
-window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; } };
+window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; } };

@@ -8,7 +8,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--label); font: 17px/1.4 var(--font); -webkit-font-smoothing: antialiased; overflow: hidden; }
 #app { position: fixed; inset: 0; }
-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; } /* the whole picture the camera sees, never a zoomed crop */
 .glass { background: var(--glass); -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%); border: 1px solid var(--hair); }
 
 .top { position: absolute; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; min-height: 52px; padding: 6px 8px; border-radius: 999px; }
