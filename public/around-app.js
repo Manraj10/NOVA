@@ -1,19 +1,26 @@
-// Around me: the camera faces where the person faces; every couple of seconds one frame goes to
-// /api/around, and around.js turns it into short spoken news: what's in the way first, then new
-// people, then doors and things. Tap the screen, press the button, or say "what's around me".
+// Around me: the camera faces where the person faces. Looks go to /api/around back to back (one in
+// flight, ~2-4 s each), and around.js turns them into short spoken news: what's in the way first,
+// then new people, then doors and things. Every news line is made in the natural voice while the page
+// loads (allLines), so it plays the instant it's seen. Tap the screen, press the button, or say
+// "what's around me" / "what's going on".
 import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
-import { makeAround } from './around.js';
+import { makeAround, allLines } from './around.js';
 
 const $ = id => document.getElementById(id);
 const video = $('video');
 const PHONE = matchMedia('(pointer: coarse)').matches;
 const around = makeAround({ hfov: PHONE ? 50 : 60 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let heading = null, running = false, lastErrorSaid = 0;
+let heading = null, running = false, lastErrorSaid = 0, scene = '', sceneSaid = false;
 
 voice.init();
-voice.onCaption = (text, cue) => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
+voice.onCaption = text => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
+// Make every news line in the natural voice now, before the first look: speech is then instant.
+const START = "Around me is on. Hold your phone at chest height and turn slowly.";
+// Three warm-up queues of four (12 at a time): all 153 lines are ready about 15 s after the page opens.
+const LINES = [START, ...allLines()];
+for (let k = 0; k < 3; k++) voice.prefetch(LINES.filter((_, i) => i % 3 === k));
 
 // Compass: iPhone gives webkitCompassHeading after permission; others give absolute alpha.
 function onOrient(e) {
@@ -44,7 +51,7 @@ async function start() {
   }
   await askOrient;
   running = true;
-  await voice.say("Around me is on. Turn slowly, and I'll tell you what's new.");
+  voice.say(START);
   loop();
 }
 
@@ -56,54 +63,60 @@ async function startEars(mic) {
       ctx: voice.ctx, lang: () => 'en', ignore: () => false,
       onText: text => {
         if (voice.echo(text)) return;
-        const t = text.toLowerCase();
-        if (/around|who('?s| is) (here|there|near)|what do you see|describe/.test(t)) tellAll();
-        else if (/^(stop|pause|quiet)\b/.test(t)) { running = false; voice.say('Paused. Say "start" to go on.'); }
+        const t = text.toLowerCase().replace(/[.,!?]/g, '');
+        if (/going on|happening|describe|what do you see|look/.test(t)) tellScene();
+        else if (/around|who('?s| is) (here|there|near)|anyone|people/.test(t)) tellAll();
+        else if (/^(stop|pause|quiet)\b/.test(t)) { running = false; voice.say('Paused. Say start to go on.'); }
         else if (/^(start|go|resume|continue)\b/.test(t) && !running) { running = true; voice.say('Going on.'); loop(); }
+        else if (/\b(home|menu)\b/.test(t)) { voice.say('Going home.').then(() => { location.href = './'; }); }
+        else if (/\b(paper|form)\b/.test(t)) { voice.say('Opening Paper.').then(() => { location.href = 'paper.html'; }); }
+        else if (/\bmemory\b/.test(t)) { voice.say('Opening Memory.').then(() => { location.href = 'memory.html'; }); }
       },
     }).start(mic);
   } catch { voice.micOpen = false; }
 }
 
+// Small frames: about 2-4 s per look instead of 3-8 s at full size, and people still count right.
 function snap() {
-  const w = 768, h = Math.round(w * video.videoHeight / video.videoWidth) || 576;
+  const w = 512, h = Math.round(w * video.videoHeight / video.videoWidth) || 384;
   const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
   c.getContext('2d').drawImage(video, 0, 0, w, h);
   return c.toDataURL('image/jpeg', 0.72);
 }
 
-async function frame() {
+async function look() {
   const h = heading;
   const r = await fetch('api/around', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), lang: 'en' }) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  if (j.scene) scene = j.scene;
   chips(j.items || []);
   return around.update(j.items || [], h);
 }
 
+// News waits in a short queue; anything older than 5 s is dropped, because the person has turned since.
 const queue = [];
 async function speakQueue() {
   if (speakQueue.busy) return;
   speakQueue.busy = true;
   while (queue.length) {
     const { text, at } = queue.shift();
-    if (Date.now() - at < 7000) await voice.say(text); // old news isn't news
+    if (Date.now() - at < 5000) await voice.say(text);
   }
   speakQueue.busy = false;
 }
 
 async function loop() {
   while (running) {
-    const t0 = performance.now();
     try {
-      const { say, hazard } = await frame();
+      const { say, hazard } = await look();
+      if (!sceneSaid && scene) { sceneSaid = true; queue.push({ text: scene, at: Date.now() }); }
       if (hazard) {
+        // In the way: cut whatever is playing, warn with a low tone, then say it first.
         queue.length = 0;
         voice.stop();
-        voice.beep(330, 0.22, 0.22); // a low warning tone before the words
-        await sleep(240);
-        await voice.say(say[0], { cue: true }); // instantly, in whichever voice is ready
-        say.shift();
+        voice.beep(330, 0.22, 0.22);
+        queue.push({ text: say.shift(), at: Date.now() + 250 });
       }
       for (const text of say) queue.push({ text, at: Date.now() });
       speakQueue();
@@ -112,7 +125,7 @@ async function loop() {
       await sleep(2000);
     }
     $('count').textContent = countText();
-    await sleep(Math.max(300, 1500 - (performance.now() - t0)));
+    await sleep(150); // the next look starts right away; speech runs alongside
   }
 }
 
@@ -131,7 +144,7 @@ function chips(items) {
     c.style.left = `${Math.min(88, Math.max(12, i.x * 100))}%`;
     c.style.top = `${30 + (k % 4) * 7}%`;
     c.textContent = i.label;
-    c.append(Object.assign(document.createElement('small'), { textContent: `${i.steps} step${i.steps === 1 ? '' : 's'}` }));
+    c.append(Object.assign(document.createElement('small'), { textContent: `~${i.steps} step${i.steps === 1 ? '' : 's'}` }));
     box.append(c);
   });
 }
@@ -142,8 +155,14 @@ function tellAll() {
   voice.say(around.summary(heading));
 }
 
+function tellScene() {
+  queue.length = 0;
+  voice.stop();
+  voice.say(scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase())}` : "I'm still looking. Turn slowly.");
+}
+
 $('start').addEventListener('click', start);
-$('ask').addEventListener('click', e => { e.stopPropagation(); tellAll(); });
-// Blind-friendly: the whole picture is a button too.
+// The button and the picture: what's going on right now, then everything seen so far.
+$('ask').addEventListener('click', e => { e.stopPropagation(); tellScene(); setTimeout(() => queue.push({ text: around.summary(heading), at: Date.now() }) && speakQueue(), 50); });
 video.addEventListener('click', tellAll);
-window.nibAround = { around, get heading() { return heading; } };
+window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; } };

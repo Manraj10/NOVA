@@ -1777,7 +1777,7 @@ if (S.sim) {
   if (new URLSearchParams(location.search).has('bot')) import('./bot.js').then(m => m.startBot(S)); // robot finger test
   app.dataset.sim = '';
   status(matchMedia('(pointer: coarse)').matches ? 'Practice mode: drag your finger across the picture. Use the yellow button when you finish writing.' : 'Practice mode: your pointer is the fingertip. Tap Space when you finish writing; hold Space to ask.');
-  $('modeLink').href = './';
+  $('modeLink').href = 'paper.html'; // Paper lives at paper.html now; ./ is the home hub
   $('modeLink').textContent = 'Use the camera instead';
 } else {
   loadHands();
