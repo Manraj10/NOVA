@@ -98,10 +98,10 @@ function openWindow(ms = 9000, cue = true) {
   if (cue) voice.earcon(true);
 }
 
-// The ears hear "Nib" many ways; "hey" alone also opens a window, as Manraj asked.
+// The ears hear "Nib" many ways. A bare "hey" is NOT a wake word: in a busy room people say it all the time.
+// Nib still listens by itself right after it asks or describes something.
 const fixWake = t => t
-  .replace(/^\s*(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nim|neeb|nibe|nibh|nieb|knib|neb)\b[,.!?]*/i, 'Hey Nib, ')
-  .replace(/^\s*(hey|hi|hay)( there)?[\s,.!?]*$/i, 'Nib')
+  .replace(/^\s*(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nim|neeb|nibe|nibh|nieb|knib|neb|nip)\b[,.!?]*/i, 'Hey Nib, ')
   .replace(/^Hey Nib,\s*$/, 'Nib');
 
 function heard(text, { typed = false } = {}) {
