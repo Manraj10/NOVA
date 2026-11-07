@@ -33,9 +33,10 @@ export const voice = {
   voices: [],
   // The natural voice (/api/speak). Off in robot test runs so they stay offline and free.
   cloud: !new URLSearchParams(location.search).has('bot'),
-  clips: new Map(), // text -> { done, pcm, rate, p }
+  clips: new Map(), // [request language, exact text] -> { done, pcm, rate, p }
   seq: 0,
   wordTimers: [],
+  finishCurrent: null,
   onCaption: () => {},
 
   init() {
@@ -72,11 +73,13 @@ export const voice = {
   // Fetch (once) the natural-voice clip for a line. entry.pcm stays null if the voice is off,
   // failed, or changed a word; then the built-in voice speaks that line.
   clip(text) {
-    let e = this.clips.get(text);
+    const lang = this.lang, key = JSON.stringify([lang, text]);
+    let e = this.clips.get(key);
     if (e) return e;
-    e = { done: false, pcm: null, rate: 24000 };
-    e.p = !this.cloud ? Promise.resolve() : fetch('/api/speak', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, lang: this.lang }),
+    const fallback = !this.cloud || text.trim().length > 400;
+    e = { done: fallback, pcm: null, rate: 24000 };
+    e.p = fallback ? Promise.resolve() : fetch('/api/speak', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, lang }),
     }).then(async r => {
       if (r.status === 503) this.cloud = false; // no key on the server: stop asking
       if (!r.ok) return;
@@ -87,28 +90,40 @@ export const voice = {
       e.rate = j.rate || 24000;
     }).catch(() => {}).finally(() => {
       e.done = true;
-      if (!e.pcm) setTimeout(() => { if (this.clips.get(text) === e) this.clips.delete(text); }, 30000); // retry later
+      if (!e.pcm) setTimeout(() => { if (this.clips.get(key) === e) this.clips.delete(key); }, 30000); // retry later
     });
-    this.clips.set(text, e);
+    this.clips.set(key, e);
     return e;
   },
 
   // Warm the lines Nib is about to say, four at a time, so guidance never waits on the network.
   prefetch(texts) {
     if (!this.cloud) return;
-    const q = [...new Set(texts.filter(Boolean))].filter(t => !this.clips.has(t));
-    const next = () => { const t = q.shift(); if (t) this.clip(t).p.then(next); };
+    const lang = this.lang;
+    const q = [...new Set(texts.filter(Boolean))].filter(t => !this.clips.has(JSON.stringify([lang, t])));
+    // Do not fetch an old-language warm-up queue using a newly selected language.
+    const next = () => { const t = q.shift(); if (t && this.lang === lang) this.clip(t).p.then(next); };
     for (let k = 0; k < 4; k++) next();
   },
 
   // Stop whatever is speaking, in either voice.
-  stop() {
+  stop({ resumeEars = true } = {}) {
     this.seq++;
+    const finish = this.finishCurrent;
+    this.finishCurrent = null;
+    this.current = null;
+    this.speaking = false;
+    this.kind = '';
+    this.soft = false;
+    this.endedAt = performance.now();
     speechSynthesis.cancel();
-    try { this.source?.stop(); } catch { /* already stopped */ }
+    const source = this.source;
     this.source = null;
+    try { source?.stop(); } catch { /* already stopped */ }
     this.wordTimers.forEach(clearTimeout);
     this.wordTimers = [];
+    finish?.(); // settle the cancelled say immediately, even if fetch never returns
+    if (resumeEars) this.ears?.resume();
   },
 
   // cue: short direction words. They never cut off a full instruction.
@@ -119,7 +134,7 @@ export const voice = {
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
     this.recent = [...(this.recent || []).slice(-5), text]; // for echo()
-    this.stop();
+    this.stop({ resumeEars: false });
     const my = this.seq, token = {};
     this.current = token;
     this.speaking = true;
@@ -128,28 +143,44 @@ export const voice = {
     this.startedAt = performance.now();
     this.ears?.pause();
     return new Promise(resolve => {
-      let done = false;
-      const end = () => {
+      let done = false, timer, waitTimer;
+      const end = (cancelled = false) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        if (this.current === token) {
+        clearTimeout(waitTimer);
+        if (this.current === token && this.seq === my) {
+          speechSynthesis.cancel(); // watchdog completion also stops system audio
+          const source = this.source;
+          this.source = null;
+          // Includes watchdog completion: never reopen ears while PCM continues.
+          try { source?.stop(); } catch { /* already ended */ }
+          this.wordTimers.forEach(clearTimeout);
+          this.wordTimers = [];
+          this.finishCurrent = null;
+          this.current = null;
           this.speaking = false; this.kind = ''; this.endedAt = performance.now();
-          if (!cue) this.onEnd?.();
-          this.ears?.resume();
+          if (!cancelled && !cue) this.onEnd?.();
+          if (!cancelled) this.ears?.resume();
         }
         resolve();
       };
       // ponytail: some browsers never fire onend, so a length-based timeout backs it up
-      const timer = setTimeout(end, 4000 + text.length * 110);
+      const watchdog = ms => { clearTimeout(timer); timer = setTimeout(() => end(), ms); };
+      this.finishCurrent = () => end(true);
+      watchdog(4000 + text.length * 110);
       const e = this.clip(text);
       const go = () => {
-        if (this.seq !== my) return end(); // a newer line took over while this one was loading
-        if (e.pcm && this.ctx?.state === 'running') this.playClip(e, text, cue, end);
-        else this.speakBuiltIn(text, cue, end);
+        if (done || this.seq !== my || this.current !== token) return end(true);
+        if (e.pcm && this.ctx?.state === 'running') {
+          // PCM has a known duration. Text-length estimates are only for system
+          // speech, whose browsers sometimes omit their completion event.
+          watchdog(e.pcm.length / e.rate * 1000 + 1500);
+          this.playClip(e, text, cue, () => end());
+        } else this.speakBuiltIn(text, cue, () => end());
       };
       if (e.done || cue || !this.cloud) go();
-      else Promise.race([e.p, new Promise(r => setTimeout(r, 1500))]).then(go);
+      else Promise.race([e.p, new Promise(r => { waitTimer = setTimeout(r, 1500); })]).then(go);
     });
   },
 
@@ -169,12 +200,13 @@ export const voice = {
   },
 
   speakBuiltIn(text, cue, end) {
+    const my = this.seq, token = this.current;
     const u = new SpeechSynthesisUtterance(text);
     u.lang = TAGS[this.lang];
     const v = this.pick();
     if (v) u.voice = v;
     u.rate = cue ? 1.3 : 1.05;
-    if (!cue) u.onboundary = ev => this.onWord?.(ev.charIndex);
+    if (!cue) u.onboundary = ev => { if (this.seq === my && this.current === token) this.onWord?.(ev.charIndex); };
     u.onend = end;
     u.onerror = end;
     speechSynthesis.speak(u);
@@ -258,10 +290,28 @@ export const voice = {
 
   // One heard phrase, from the browser recognizer or Nib's own ears (ears.js), to a command.
   // True when the ears only heard Nib's own recent words coming back through the speaker.
-  echo(text) {
+  echoSnapshot() {
+    // Server transcription may finish long after playback. Preserve the acoustic
+    // context at speech onset, including a copy before later lines replace it.
+    return Object.freeze({
+      active: this.speaking || performance.now() - this.endedAt <= 700,
+      recent: Object.freeze([...(this.recent || [])]),
+    });
+  },
+
+  echo(text, captured) {
+    const context = captured || this.echoSnapshot();
+    // Recent words are not a permanent command blacklist: a genuine "done"
+    // begun after playback's tail must work, however fast or slow ASR returns.
+    if (!context.active) return false;
+    // A bare wake phrase may interrupt playback by opening a question window.
+    // A full wake+command still must not repeat words from our own speaker.
+    const low = String(text || '').trim().toLowerCase();
+    const bare = low.replace(/[.,!?。！？"']/g, '').trim();
+    if (captured && BARE.test(bare)) return false;
     const n = s => String(s).toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
     const h = n(text);
-    return !!h && (this.recent || []).some(line => n(line).includes(h));
+    return !!h && context.recent.some(line => n(line).includes(h));
   },
 
   handle(text) {
@@ -286,7 +336,7 @@ export const voice = {
     const resume = this.rec;
     this.rec = null;
     resume?.abort?.();
-    this.stop();
+    this.stop({ resumeEars: false });
     this.speaking = false;
     try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
     const rec = new SR();

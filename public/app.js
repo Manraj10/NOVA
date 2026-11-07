@@ -1263,46 +1263,110 @@ function onVoiceCommand(cmd, rest) {
 async function startEars() {
   voice.onCommand = onVoiceCommand;
   if (new URLSearchParams(location.search).has('bot')) return; // the robot finger has no mouth
-  try {
-    voice.micOpen = true;
-    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
-    S.ears = await makeEars({
-      ctx: voice.ctx,
-      lang: () => S.lang,
-      ignore: () => !!talk.live, // hold-to-ask has the mic; otherwise listen even while Nib talks (barge-in)
-      onText: text => {
-        if (voice.echo(text)) return; // Nib hearing itself through the speaker
-        if (S.awaitQ > performance.now()) return gotQuestion(text);
-        voice.handle(text);
-      },
-    }).start(S.mic);
-    S.earsErr = '';
-  } catch (e) {
-    voice.micOpen = false;
-    S.earsErr = e?.name || 'error';
-    say(t().noEars); // said once, so a blind user knows to hold the screen instead
-    voice.listen(onVoiceCommand); // the browser's recognizer, where it works
-  }
+  if (S.earsStarting) return S.earsStarting;
+  if (S.ears?.stream) return S.ears;
+  S.ears = null;
+  let sequence = 0;
+  const current = token => !!token && !talk.live && S.mode !== 'start'
+    && token.epoch === S.epoch && token.mode === S.mode && token.field === S.fields[S.i]
+    && token.index === S.i && token.lang === S.lang && token.ptt === (S.earsPttGeneration || 0);
+  const ears = makeEars({
+    ctx: voice.ctx,
+    lang: () => S.lang,
+    ignore: () => !!talk.live || S.mode === 'start', // barge-in remains available while Nib speaks
+    // Snapshot at speech onset, not when a slow transcription comes back. In
+    // particular, "done" spoken while writing must never Keep a later readback.
+    onCapture: () => ({ epoch: S.epoch, mode: S.mode, field: S.fields[S.i], index: S.i,
+      lang: S.lang, ptt: S.earsPttGeneration || 0, sequence: ++sequence, capturedAt: performance.now(),
+      echoContext: voice.echoSnapshot?.() }),
+    isCurrent: current,
+    onText: (text, token) => {
+      if (voice.echo(text, token.echoContext)) return;
+      if (S.awaitQ && gotQuestion(text, token)) return;
+      S.earsDelivery = token; // lets a bare wake phrase identify its ordered follow-up
+      try { voice.handle(text); } finally { S.earsDelivery = null; }
+    },
+  });
+  S.earsPending = ears;
+  let pending;
+  pending = (async () => {
+    try {
+      voice.micOpen = true;
+      try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
+      // Resume inside the start interaction; never switch an open iOS mic to playback.
+      try { voice.ctx.resume?.()?.catch?.(() => {}); } catch { /* unsupported audio context */ }
+      const active = await ears.start(S.mic);
+      S.ears = active;
+      S.earsErr = '';
+      // A recovered custom listener replaces the browser fallback, rather than
+      // dispatching every utterance twice through two recognizers.
+      const rec = voice.rec;
+      voice.rec = null;
+      try { rec?.abort(); } catch { /* already stopped */ }
+      return active;
+    } catch (e) {
+      ears.stop();
+      if (e?.name !== 'AbortError') {
+        voice.micOpen = false;
+        S.earsErr = e?.name || 'error';
+        say(t().noEars);
+        voice.listen(onVoiceCommand);
+      }
+      return null;
+    } finally {
+      if (S.earsPending === ears) S.earsPending = null;
+      if (S.earsStarting === pending) S.earsStarting = null;
+    }
+  })();
+  S.earsStarting = pending;
+  return pending;
 }
 
 function awaitQuestion() {
   voice.stop(); // "Nib" cuts Nib off
   S.awaitQ = performance.now() + 8000;
+  const waiting = S.awaitQContext = { epoch: S.epoch, mode: S.mode, field: S.fields[S.i], index: S.i,
+    lang: S.lang, ptt: S.earsPttGeneration || 0, after: S.earsDelivery?.sequence || 0, until: S.awaitQ };
   app.dataset.talk = 'listening';
   setCue('listen');
   showHeard('');
   voice.earcon(true);
   buzz(20);
   clearTimeout(talk.auto);
-  talk.auto = setTimeout(() => { if (S.awaitQ) { S.awaitQ = 0; voice.earcon(false); talkDone(); say(t().heardNothing); } }, 8000);
+  const expire = () => {
+    if (!S.awaitQ || S.awaitQContext !== waiting) return;
+    const same = !talk.live && S.epoch === waiting.epoch && S.mode === waiting.mode
+      && S.fields[S.i] === waiting.field && S.i === waiting.index && S.lang === waiting.lang
+      && (S.earsPttGeneration || 0) === waiting.ptt;
+    const now = performance.now();
+    // The person gets eight seconds to start a question. If that timely phrase
+    // is still being captured/queued/transcribed, allow at most ten extra seconds.
+    const pending = same && S.ears?.hasPending(token => token.sequence > waiting.after && token.capturedAt <= waiting.until);
+    if (pending && now < waiting.until + 10000) {
+      talk.auto = setTimeout(expire, Math.min(250, waiting.until + 10000 - now));
+      return;
+    }
+    S.awaitQ = 0; S.awaitQContext = null;
+    voice.earcon(false);
+    if (!talk.live) talkDone();
+    if (same) say(t().heardNothing);
+  };
+  talk.auto = setTimeout(expire, 8000);
 }
 
-function gotQuestion(text) {
+function gotQuestion(text, token) {
+  const waiting = S.awaitQContext;
+  if (!S.awaitQ || !waiting || !token || token.sequence <= waiting.after || token.capturedAt > waiting.until
+    || performance.now() > waiting.until + 10000 || talk.live
+    || S.epoch !== waiting.epoch || S.mode !== waiting.mode || S.fields[S.i] !== waiting.field
+    || S.i !== waiting.index || S.lang !== waiting.lang || (S.earsPttGeneration || 0) !== waiting.ptt) return false;
   S.awaitQ = 0;
+  S.awaitQContext = null;
   clearTimeout(talk.auto);
   voice.earcon(false);
   showHeard(text);
   answer(text);
+  return true;
 }
 
 // ---------- listening: hold to ask ----------
