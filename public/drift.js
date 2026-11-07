@@ -3,7 +3,7 @@
 // A portrait page often fills under half a landscape webcam image. At 192 wide,
 // its small print collapses into a handful of pixels; 320 preserves useful detail
 // while retaining the same bounded patch count and search work.
-const SIZE = 320, R = 5, SEARCH = 8, CELL = 24, LIMIT = 48;
+const SIZE = 320, R = 5, SEARCH = 8, CELL = 20, LIMIT = 48;
 const MIN_ANCHORS = 8, MATCH = 0.82, STILL = 0.88, SHIFT = 2;
 const FULL_FRAME = { x0: 0, y0: 0, x1: 1, y1: 1 };
 
