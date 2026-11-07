@@ -49,6 +49,7 @@ export function makeAround({ hfov = 60 } = {}) {
     set hfov(v) { fov = v; },
     // items: [{kind,name,label,x 0-1,steps,inPath}] from /api/around; heading in degrees or null.
     update(items, heading, now = Date.now()) {
+      for (let k = world.length - 1; k >= 0; k--) if (now - world[k].at > 25000) world.splice(k, 1); // may have moved
       const say = [];
       let hazard = false;
       // 1. The nearest thing in the path, within 3 steps: always first, at most every 10 s per kind of thing.

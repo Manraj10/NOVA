@@ -12,12 +12,12 @@ const video = $('video');
 const PHONE = matchMedia('(pointer: coarse)').matches;
 const around = makeAround({ hfov: PHONE ? 50 : 60 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let heading = null, running = false, lastErrorSaid = 0, scene = '', sceneSaid = false, lens = 'main';
+let heading = null, running = false, lastErrorSaid = 0, scene = '', lens = 'main', gen = 0;
 
 voice.init();
 voice.onCaption = text => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
 // Make every news line in the natural voice now, before the first look: speech is then instant.
-const START = "Around me is on. Hold your phone at chest height and turn slowly.";
+const START = "Around me. Hold your phone at chest height and turn slowly. Say stop, or home, any time.";
 // Three warm-up queues of four (12 at a time): all 153 lines are ready about 15 s after the page opens.
 const LINES = [START, ...allLines()];
 for (let k = 0; k < 3; k++) voice.prefetch(LINES.filter((_, i) => i % 3 === k));
@@ -32,7 +32,7 @@ async function start() {
   if (running) return;
   // Everything that needs the tap happens before the first await.
   voice.unlock();
-  const askOrient = window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied');
+  const askOrient = window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied'); // must start inside the tap
   addEventListener('deviceorientationabsolute', onOrient);
   addEventListener('deviceorientation', onOrient);
   $('start').hidden = true;
@@ -66,10 +66,12 @@ async function start() {
     $('start').hidden = false;
     return voice.say("I can't open the camera. Allow the camera for this site, then tap again.");
   }
-  await askOrient;
+  const orient = await askOrient;
   running = true;
-  voice.say(START);
-  loop();
+  // The first look starts while the welcome plays; its news waits in the queue until the welcome ends.
+  speakQueue.busy = true;
+  voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START).then(() => { speakQueue.busy = false; speakQueue(); });
+  loop(++gen);
 }
 
 async function startEars(mic) {
@@ -77,17 +79,21 @@ async function startEars(mic) {
     voice.micOpen = true;
     try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
     await makeEars({
-      ctx: voice.ctx, lang: () => 'en', ignore: () => false,
-      onText: text => {
-        if (voice.echo(text)) return;
-        const t = text.toLowerCase().replace(/[.,!?]/g, '');
-        if (/going on|happening|describe|what do you see|look/.test(t)) tellScene();
-        else if (/around|who('?s| is) (here|there|near)|anyone|people/.test(t)) tellAll();
-        else if (/^(stop|pause|quiet)\b/.test(t)) { running = false; voice.say('Paused. Say start to go on.'); }
-        else if (/^(start|go|resume|continue)\b/.test(t) && !running) { running = true; voice.say('Going on.'); loop(); }
-        else if (/\b(home|menu)\b/.test(t)) { voice.say('Going home.').then(() => { location.href = './'; }); }
-        else if (/\b(paper|form)\b/.test(t)) { voice.say('Opening Paper.').then(() => { location.href = 'paper.html'; }); }
-        else if (/\bmemory\b/.test(t)) { voice.say('Opening Memory.').then(() => { location.href = 'memory.html'; }); }
+      ctx: voice.ctx, lang: () => 'en',
+      ignore: () => false, // barge-in: listen while Nib talks, and drop Nib's own words with the snapshot below
+      onCapture: () => voice.echoSnapshot(), // what Nib was saying when this phrase began
+      onText: (text, said) => {
+        if (voice.echo(text, said)) return; // Nib hearing itself through the speaker
+        // Whole short phrases only, so news like "two people ahead" or a stray word never acts.
+        const t = text.toLowerCase().replace(/[.,!?"']/g, '').replace(/^(hey |ok |okay )?nib,? /, '').trim();
+        const go = (line, url) => voice.say(line).then(() => { location.href = url; });
+        if (/^(go )?(home|menu|go back)$/.test(t)) go('Going home.', './');
+        else if (/^(open )?(paper|fill (in )?a form)$/.test(t)) go('Opening Paper.', 'paper.html');
+        else if (/^(open )?memory$/.test(t)) go('Opening Memory.', 'memory.html');
+        else if (/^(stop|pause|quiet|be quiet)$/.test(t)) { running = false; gen++; queue.length = 0; voice.stop(); voice.say('Paused. Say start to go on.'); }
+        else if (/^(start|resume|continue|go on)$/.test(t) && !running) { running = true; voice.say('Going on.'); loop(++gen); }
+        else if (/^(whats|what is) going on|^(describe|what do you see)/.test(t)) tellScene();
+        else if (/^(whats|what is) around( me)?|^who(s| is) (here|around|near)/.test(t)) tellAll();
       },
     }).start(mic);
   } catch { voice.micOpen = false; }
@@ -103,7 +109,8 @@ function snap() {
 
 async function look() {
   const h = heading;
-  const r = await fetch('api/around', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), lang: 'en' }) });
+  if (!video.videoWidth) { await sleep(300); return { say: [], hazard: false }; }
+  const r = await fetch('api/around', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), lang: 'en' }), signal: AbortSignal.timeout(9000) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   if (j.scene) scene = j.scene;
@@ -111,29 +118,30 @@ async function look() {
   return around.update(j.items || [], h);
 }
 
-// News waits in a short queue; anything older than 5 s is dropped, because the person has turned since.
+// News waits in a short queue. Old news is dropped (the person has turned since): hazards after 4 s,
+// other news after 10 s, so a burst of lines from the first look is still heard.
 const queue = [];
 async function speakQueue() {
   if (speakQueue.busy) return;
   speakQueue.busy = true;
   while (queue.length) {
-    const { text, at } = queue.shift();
-    if (Date.now() - at < 5000) await voice.say(text);
+    const { text, at, urgent } = queue.shift();
+    if (Date.now() - at < (urgent ? 4000 : 10000)) await voice.say(text);
   }
   speakQueue.busy = false;
 }
 
-async function loop() {
-  while (running) {
+async function loop(my) {
+  while (running && my === gen) { // a stop/start never leaves two loops running
     try {
       const { say, hazard } = await look();
-      if (!sceneSaid && scene) { sceneSaid = true; queue.push({ text: scene, at: Date.now() }); }
+      if (my !== gen) return;
       if (hazard) {
         // In the way: cut whatever is playing, warn with a low tone, then say it first.
         queue.length = 0;
         voice.stop();
         voice.beep(330, 0.22, 0.22);
-        queue.push({ text: say.shift(), at: Date.now() + 250 });
+        queue.push({ text: say.shift(), at: Date.now() + 250, urgent: true });
       }
       for (const text of say) queue.push({ text, at: Date.now() });
       speakQueue();
@@ -180,6 +188,12 @@ function tellScene() {
 
 $('start').addEventListener('click', start);
 // The button and the picture: what's going on right now, then everything seen so far.
-$('ask').addEventListener('click', e => { e.stopPropagation(); tellScene(); setTimeout(() => queue.push({ text: around.summary(heading), at: Date.now() }) && speakQueue(), 50); });
+$('ask').addEventListener('click', e => {
+  e.stopPropagation();
+  queue.length = 0;
+  voice.stop();
+  voice.say(`${scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase()).replace(/\.?$/, '.')} ` : ''}${around.summary(heading)}`);
+});
+$('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
 video.addEventListener('click', tellAll);
 window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; } };
