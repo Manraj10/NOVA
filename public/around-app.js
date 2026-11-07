@@ -78,7 +78,13 @@ async function start(auto = false) {
   running = true;
   // The first look starts while the welcome plays; its news waits in the queue until the welcome ends.
   speakQueue.busy = true;
-  voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START).then(() => { speakQueue.busy = false; speakQueue(); });
+  voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START).then(() => {
+    // Right after the greeting Nib is already listening (chime + orb): ask anything without saying Nib.
+    // News waits 6 s for the question; a hazard still cuts in.
+    askUntil = performance.now() + 6000;
+    voice.earcon(true);
+    holdNews = setTimeout(() => { holdNews = 0; speakQueue.busy = false; speakQueue(); }, 6000);
+  });
   loop(++gen);
   eyesReady.then(() => requestAnimationFrame(watch));
 }
@@ -223,7 +229,9 @@ function stairsAlarm(s) {
 }
 
 // One place where news becomes speech, for both the eyes and the cloud.
+let holdNews = 0;
 function news({ say, hazard }) {
+  if (hazard && holdNews) { clearTimeout(holdNews); holdNews = 0; speakQueue.busy = false; } // safety first
   if (hazard) {
     // In the way: cut whatever is playing, warn with a low tone, then say it first.
     queue.length = 0;

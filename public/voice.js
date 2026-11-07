@@ -72,7 +72,19 @@ export const voice = {
   },
 
   // Audio and speech only start after a user gesture.
+  // Hands are busy and nobody touches the phone, so the screen must never sleep while Nib is running
+  // (a locked phone stops the camera and the mic). Taken again whenever the page comes back.
+  keepAwake() {
+    const take = async () => { try { if (!this.wakeLock || this.wakeLock.released) this.wakeLock = await navigator.wakeLock?.request('screen'); } catch { /* not supported or not allowed: fine */ } };
+    take();
+    if (!this.awakeHooked) {
+      this.awakeHooked = true;
+      document.addEventListener?.('visibilitychange', () => { if (document.visibilityState === 'visible') take(); });
+    }
+  },
+
   unlock() {
+    this.keepAwake();
     this.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
     this.ctx.resume?.();
     try { if (navigator.audioSession) navigator.audioSession.type = this.micOpen ? 'play-and-record' : 'playback'; } catch { /* Safari 16.4+ only */ }
