@@ -9,13 +9,17 @@ const READ = { text: 'Alex Kim', legible: true, spoken: 'You wrote Alex Kim.' };
 const ASK = { say: 'Skipping it.', action: 'skip', field: -1, lang: 'en' };
 const pick = body => (body.includes('close-up') ? READ : body.includes('just said') ? ASK : PARSE);
 
+let rejectSchemas = false; // a route that refuses response_format, to prove the plain-JSON retry
 const server = http.createServer(async (req, res) => {
   let body = '';
   for await (const c of req) body += c;
-  seen.push({ url: req.url, headers: req.headers, body: JSON.parse(body) });
-  const answer = JSON.stringify(pick(body));
+  const b = JSON.parse(body);
+  seen.push({ url: req.url, headers: req.headers, body: b });
+  let answer = JSON.stringify(pick(body));
   res.setHeader('content-type', 'application/json');
   if (req.url.includes('dead-model')) { res.statusCode = 404; return res.end('{"error":{"message":"not found"}}'); }
+  if (b.model === 'dead-model' || (rejectSchemas && b.response_format)) { res.statusCode = 400; return res.end('{"error":{"message":"dead-model is not a valid model ID"}}'); }
+  if (b.model === 'fenced-model') answer = `Here it is:\n\`\`\`json\n${answer}\n\`\`\``;
   if (req.url.startsWith('/v1beta/models/')) return res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: answer }] } }] }));
   if (req.url === '/v1/chat/completions') return res.end(JSON.stringify({ choices: [{ message: { content: answer } }] }));
   if (req.url.startsWith('/v1/messages')) return res.end(JSON.stringify({
@@ -27,15 +31,16 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(r => server.listen(0, r));
 const base = `http://127.0.0.1:${server.address().port}`;
-Object.assign(process.env, { NIB_GEMINI_BASE: base, NIB_OPENAI_BASE: base, NIB_ANTHROPIC_BASE: base });
+Object.assign(process.env, { NIB_GEMINI_BASE: base, NIB_OPENAI_BASE: base, NIB_ANTHROPIC_BASE: base, NIB_OPENROUTER_BASE: base });
+const KEYS = ['OPENROUTER_KEY', 'OPENROUTER_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
+const only = key => { for (const k of KEYS) delete process.env[k]; process.env[key] = 'test-key'; };
 
 const ai = await import('./lib/ai.js');
 const IMG = 'data:image/jpeg;base64,/9j/AAAA';
 const fields = [{ label: 'Full name', kind: 'text', done: false }];
 
-for (const [p, key] of [['gemini', 'GEMINI_API_KEY'], ['claude', 'ANTHROPIC_API_KEY'], ['openai', 'OPENAI_API_KEY']]) {
-  for (const k of ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY']) delete process.env[k];
-  process.env[key] = 'test-key';
+for (const [p, key] of [['openrouter', 'OPENROUTER_KEY'], ['gemini', 'GEMINI_API_KEY'], ['claude', 'ANTHROPIC_API_KEY'], ['openai', 'OPENAI_API_KEY']]) {
+  only(key);
   assert.equal(ai.provider(), p);
   seen.length = 0;
 
@@ -72,12 +77,34 @@ for (const [p, key] of [['gemini', 'GEMINI_API_KEY'], ['claude', 'ANTHROPIC_API_
     assert.equal(req.body.response_format.json_schema.strict, true);
     assert.ok(req.body.messages[0].content[1].image_url.url.startsWith('data:image/jpeg;base64,'));
   }
+  if (p === 'openrouter') {
+    assert.equal(req.headers.authorization, 'Bearer test-key');
+    assert.equal(req.body.model, 'google/gemini-3.8-flash');
+    assert.equal(req.body.provider.require_parameters, true);
+    assert.equal(req.body.response_format.json_schema.strict, true);
+  }
   console.log(`ok  ${p}: parse, read and ask round-trip`);
 }
 
+// OpenRouter: the hacker guide's other key name, a bad model name, fenced JSON, and a route that rejects schemas.
+only('OPENROUTER_API_KEY');
+assert.equal(ai.provider(), 'openrouter');
+process.env.OPENROUTER_MODEL = 'dead-model';
+seen.length = 0;
+assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
+assert.deepEqual(seen.map(s => s.body.model), ['dead-model', 'google/gemini-3.8-flash']);
+process.env.OPENROUTER_MODEL = 'fenced-model';
+assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
+rejectSchemas = true;
+seen.length = 0;
+assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
+assert.ok(!seen.at(-1).body.response_format && seen.at(-1).body.messages[0].content[0].text.includes('JSON Schema'), 'plain-JSON retry');
+rejectSchemas = false;
+delete process.env.OPENROUTER_MODEL;
+console.log('ok  openrouter: other key name, bad model, fenced JSON, schema-less retry');
+
 // A retired Gemini model name falls through to the next one.
-for (const k of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']) delete process.env[k];
-process.env.GEMINI_API_KEY = 'test-key';
+only('GEMINI_API_KEY');
 process.env.GEMINI_MODEL = 'dead-model';
 assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
 console.log('ok  gemini: retired model falls back');

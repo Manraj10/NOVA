@@ -9,11 +9,14 @@ const WORDS = {
   zh: { up: '往上', down: '往下', left: '往左', right: '往右', near: { up: '稍微往上', down: '稍微往下', left: '稍微往左', right: '稍微往右' } },
 };
 
-const DONE = /\b(done|next|finished|okay|ok)\b|listo|terminé|siguiente|हो गया|अगला|好了|完成|下一个/;
-const REPEAT = /\b(repeat|again|what)\b|repite|otra vez|दोबारा|फिर से|再说|重复/;
-const SKIP = /\b(skip)\b|saltar|छोड़ो|跳过/;
+// The mic is always on in a room full of talking people (and a presenter), so a bare command
+// counts only when it is the whole phrase: "done" works, "okay so done with that" does not.
+const DONE = /^((i'?m )?(done|finished)|next|listo|terminé|siguiente|हो गया|अगला|好了|完成|下一个)$/;
+const REPEAT = /^(repeat( that)?|say (that|it) again|repite|otra vez|दोबारा|फिर से|再说一遍|重复)$/;
+const SKIP = /^(skip( it| this( one)?)?|saltar|छोड़ो|跳过)$/;
+// "Hey Nib", not bare "Nib": a presenter says "Nib reads the form..." all through the pitch.
 // Speech recognizers spell a made-up name many ways.
-const WAKE = /^(hey |ok |okay )?(nib|nibb|knib|nip|neb|nibs)\b/;
+const WAKE = /^(hey|hi|ok|okay)[\s,]+(nib|nibb|knib|nip|neb|nibs)\b/;
 const NICE = /natural|neural|online|google|samantha|aria|jenny|ava|siri/i;
 
 export const voice = {
@@ -132,10 +135,10 @@ export const voice = {
       if (this.speaking || performance.now() - this.endedAt < 700) return;
       const wake = WAKE.exec(low);
       if (wake) return onCommand('ask', said.slice(wake[0].length).replace(/^[\s,.!?]+/, ''));
-      if (low.length > 28) return;
-      if (DONE.test(low)) onCommand('done');
-      else if (REPEAT.test(low)) onCommand('repeat');
-      else if (SKIP.test(low)) onCommand('skip');
+      const bare = low.replace(/[.,!?。！？]/g, '').trim();
+      if (DONE.test(bare)) onCommand('done');
+      else if (REPEAT.test(bare)) onCommand('repeat');
+      else if (SKIP.test(bare)) onCommand('skip');
     };
     rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') this.rec = null; };
     rec.onend = () => { if (this.rec === rec) try { rec.start(); } catch { /* already running */ } };

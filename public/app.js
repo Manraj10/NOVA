@@ -348,13 +348,17 @@ function guide(now) {
   }
 }
 
+// ponytail: venue knob. ?tol=1.5 widens the "you're there" zone when fingertip jitter in bad light
+// keeps a finger from ever settling inside it.
+const TOL = Math.min(3, Math.max(0.5, Number(new URLSearchParams(location.search).get('tol')) || 1));
+
 // How far the fingertip is from where it should be, in units of frame height.
 function offset(f, tip) {
   const k = aspect(), a = anchorOf(f);
   const dx = (a.x - tip.x) * k, dy = a.y - tip.y;
   const pointy = f.kind === 'checkbox' || f.kind === 'button';
-  const tolX = pointy ? Math.max(((f.x1 - f.x0) * k) / 2, 0.02) : 0.04;
-  const tolY = Math.max((f.y1 - f.y0) / 2, 0.02);
+  const tolX = (pointy ? Math.max(((f.x1 - f.x0) * k) / 2, 0.02) : 0.04) * TOL;
+  const tolY = Math.max((f.y1 - f.y0) / 2, 0.02) * TOL;
   const ex = Math.abs(dx) / tolX, ey = Math.abs(dy) / tolY;
   return {
     inside: ex <= 1 && ey <= 1,
@@ -439,10 +443,11 @@ function handAway(f) {
   });
 }
 
-// Handwriting sits above the line and spills past it, so read a generous crop.
+// Handwriting sits above the line and drifts up, so read a generous crop above it. Below the line
+// only leave room for descenders: any more catches the next row's writing.
 function expand(f) {
   const h = f.y1 - f.y0;
-  return { x0: f.x0 - 0.03, x1: f.x1 + 0.03, y0: f.y0 - Math.max(h, 0.05), y1: f.y1 + Math.max(h * 0.5, 0.02) };
+  return { x0: f.x0 - 0.03, x1: f.x1 + 0.03, y0: f.y0 - Math.max(h, 0.05), y1: f.y1 + Math.max(h * 0.25, 0.008) };
 }
 
 function next() {
@@ -808,9 +813,9 @@ fetch('/api/status').then(r => r.json()).then(s => {
   $('reader').dataset.on = s.reader ? 'true' : 'false';
 }).catch(() => { $('reader').textContent = 'Server not reachable'; });
 
+window.nib = S; // lets you poke at state from the console, at the venue too
+window.nibAsk = answer; // and type a question as if it were spoken (a fallback when the room is too loud)
 if (S.sim) {
-  window.nib = S; // practice mode only: lets you poke at state from the console
-  window.nibAsk = answer; // and type a question as if it were spoken
   app.dataset.sim = '';
   status('Practice mode: your pointer is the fingertip. Tap Space when you finish writing; hold Space to ask.');
   $('modeLink').href = './';
