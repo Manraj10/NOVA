@@ -92,6 +92,9 @@ button, select { font: inherit; color: inherit; }
 }
 @media (min-width: 1100px) { .panel { display: grid; } }
 .panel-label { margin: 0; font-weight: 700; font-size: 15px; color: var(--paper-dim); }
+.panel-meta { margin: -4px 0 12px; font-family: var(--mono); font-weight: 500; font-size: 13px; color: var(--paper-dim); }
+.panel-find { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--flag); color: var(--carbon-deep); font-weight: 700; font-size: 15px; line-height: 1.35; }
+.panel-meta[hidden], .panel-find[hidden] { display: none; }
 .panel-title { margin: 0 0 8px; font-size: 22px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; text-wrap: balance; }
 .fields { margin: 0; padding: 0; list-style: none; overflow-y: auto; display: grid; align-content: start; gap: 6px; scrollbar-width: thin; }
 .fields li {

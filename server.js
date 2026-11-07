@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseForm, readField, ask, status, provider } from './lib/ai.js';
+import { parseForm, readField, ask, reviewForm, status, provider } from './lib/ai.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pub = join(root, 'public');
@@ -21,7 +21,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.ico': 'image/x-icon',
 };
-const ROUTES = { '/api/parse': parseForm, '/api/read': readField, '/api/ask': ask };
+const ROUTES = { '/api/parse': parseForm, '/api/read': readField, '/api/ask': ask, '/api/review': reviewForm };
 
 async function readJson(req) {
   const chunks = []; let size = 0;

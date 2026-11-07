@@ -16,13 +16,16 @@ const FORM = [
     say: { en: 'Write your home address.', es: 'Escribe tu dirección.' } },
   { label: 'Privacy notice', kind: 'checkbox', box: [0.08, 0.475], answer: 'checked',
     say: { en: 'Put a check in this box to say you read the privacy notice.', es: 'Marca esta casilla para decir que leíste el aviso de privacidad.' } },
+  // hidden: the first read "misses" it, so the final check has something real to catch.
+  { label: 'Initials', kind: 'text', at: [0.08, 0.745], line: [0.2, 0.42], answer: 'AK', hidden: true,
+    say: { en: 'Write your initials to agree to the consent above.', es: 'Escribe tus iniciales para aceptar el consentimiento.' } },
   { label: 'Signature', kind: 'signature', at: [0.08, 0.80], line: [0.33, 0.78], answer: 'Alex Kim',
     say: { en: 'Sign your name along the line.', es: 'Firma a lo largo de la línea.' } },
   { label: 'Date', kind: 'date', at: [0.08, 0.87], line: [0.33, 0.56], answer: '11/07/2026',
     say: { en: "Write today's date.", es: 'Escribe la fecha de hoy.' } },
 ];
 
-const LABELS_ES = { 'Full name': 'Nombre completo', 'Date of birth': 'Fecha de nacimiento', 'Phone number': 'Teléfono', 'Home address': 'Dirección', 'Privacy notice': 'Aviso de privacidad', Signature: 'Firma', Date: 'Fecha' };
+const LABELS_ES = { 'Full name': 'Nombre completo', 'Date of birth': 'Fecha de nacimiento', 'Phone number': 'Teléfono', 'Home address': 'Dirección', 'Privacy notice': 'Aviso de privacidad', Signature: 'Firma', Date: 'Fecha', Initials: 'Iniciales' };
 
 export function makeSim() {
   const canvas = document.createElement('canvas');
@@ -134,6 +137,23 @@ export function makeSim() {
   fonts.then(paint);
   paint();
 
+  const asField = (f, es) => ({ label: es ? LABELS_ES[f.label] : f.label, kind: f.kind, say: f.say[es ? 'es' : 'en'], hint: '', ...boxOf(f), _key: f.label });
+  const region = (x0, y0, x1, y1) => ({ x0: X(x0) / W, y0: Y(y0) / H, x1: X(x1) / W, y1: Y(y1) / H });
+  const field = l => boxOf(FORM.find(f => f.label === l));
+  // "Where is…" answers for the drawn form: [question words, box, English, Spanish].
+  const SPOTS = [
+    [/sign|firma/, () => field('Signature'), 'This is the signature line, near the bottom.', 'Esta es la línea para firmar, cerca del final.'],
+    [/birth|nacimiento/, () => field('Date of birth'), 'This is where your date of birth goes.', 'Aquí va tu fecha de nacimiento.'],
+    [/phone|tel[eé]fono/, () => field('Phone number'), 'This is the phone number line.', 'Esta es la línea del teléfono.'],
+    [/address|direcci/, () => field('Home address'), 'This is the home address line.', 'Esta es la línea de la dirección.'],
+    [/privacy|notice|check ?box|privacidad|casilla/, () => field('Privacy notice'), 'This is the privacy notice check box.', 'Esta es la casilla del aviso de privacidad.'],
+    [/initial|iniciales/, () => field('Initials'), 'This is the initials line, under the consent paragraph.', 'Esta es la línea de las iniciales, debajo del consentimiento.'],
+    [/consent|treatment|agree|consentimiento|tratamiento/, () => region(0.08, 0.535, 0.92, 0.695), "This is the consent to treatment. It says you agree to examination and treatment, you may refuse any treatment, and you accept charges your insurance doesn't cover.", 'Este es el consentimiento: aceptas examen y tratamiento, puedes rechazar cualquier tratamiento y aceptas los cargos que tu seguro no cubra.'],
+    [/office|oficina/, () => region(0.62, 0.905, 0.92, 0.965), "This is the office use box. It's for clinic staff, so leave it empty.", 'Este es el recuadro de uso de oficina. Es para el personal, así que déjalo vacío.'],
+    [/clinic|title|top|cl[ií]nica|t[ií]tulo/, () => region(0.08, 0.045, 0.62, 0.125), 'This is the top of the page: Allegheny Family Clinic, new patient form.', 'Arriba dice: Allegheny Family Clinic, formulario de paciente nuevo.'],
+    [/date|fecha/, () => field('Date'), "This is today's date line, next to the signature.", 'Esta es la línea de la fecha de hoy.'],
+  ];
+
   return {
     canvas,
     async parse(lang) {
@@ -141,14 +161,7 @@ export function makeSim() {
       const es = lang === 'es';
       return {
         title: es ? 'Formulario de paciente nuevo, Allegheny Family Clinic' : 'Allegheny Family Clinic, new patient form',
-        fields: FORM.map(f => ({
-          label: es ? LABELS_ES[f.label] : f.label,
-          kind: f.kind,
-          say: f.say[es ? 'es' : 'en'],
-          hint: '',
-          ...boxOf(f),
-          _key: f.label,
-        })),
+        fields: FORM.filter(f => !f.hidden).map(f => asField(f, es)),
       };
     },
     write(field) {
@@ -160,6 +173,16 @@ export function makeSim() {
       const es = lang === 'es';
       if (f.kind === 'checkbox') return { text: 'checked', legible: true, spoken: es ? 'La casilla está marcada.' : 'The box is checked.' };
       return { text: f.answer, legible: true, spoken: es ? `Escribiste ${f.answer}.` : `You wrote ${f.answer}.` };
+    },
+    review(lang) {
+      const es = lang === 'es';
+      return { summary: '', missing: FORM.filter(f => f.hidden && !written.has(f.label)).map(f => asField(f, es)) };
+    },
+    find(q, lang) {
+      const s = q.toLowerCase();
+      if (!/where|find|show me|point|take me|d[oó]nde|busca|mu[eé]strame/.test(s)) return null;
+      const spot = SPOTS.find(([re]) => re.test(s));
+      return spot && { label: '', box: spot[1](), say: spot[lang === 'es' ? 3 : 2] };
     },
     reset() {
       written.clear();

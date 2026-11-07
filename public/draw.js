@@ -18,7 +18,7 @@ export function fitOf(cw, ch, w, h) {
 }
 
 export function anchorOf(f) {
-  if (f.kind === 'checkbox' || f.kind === 'button') return { x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 };
+  if (f.kind === 'checkbox' || f.kind === 'button' || f.kind === 'find') return { x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 };
   return { x: f.x0 + Math.min(0.01, (f.x1 - f.x0) * 0.08), y: (f.y0 + f.y1) / 2 };
 }
 
@@ -26,6 +26,7 @@ function flagText(f) {
   if (f.kind === 'signature') return 'SIGN HERE';
   if (f.kind === 'checkbox') return 'CHECK HERE';
   if (f.kind === 'button') return 'TAP HERE';
+  if (f.kind === 'find') return 'HERE';
   const t = f.label.toUpperCase();
   return t.length > 22 ? t.slice(0, 21) + '…' : t;
 }
@@ -43,7 +44,8 @@ export function render(ctx, S, src, now) {
 
   try { ctx.drawImage(src.img, frame.x, frame.y, frame.w, frame.h); } catch { /* video not ready */ }
 
-  const active = ['guide', 'write', 'check'].includes(S.mode) ? S.fields[S.i] : null;
+  const seeking = S.mode === 'guide' || S.mode === 'find';
+  const active = S.mode === 'find' ? S.find : ['guide', 'write', 'check'].includes(S.mode) ? S.fields[S.i] : null;
   if (active) spotlight(ctx, S, R(active), frame, still);
   else S.hole = null;
 
@@ -70,11 +72,13 @@ export function render(ctx, S, src, now) {
     ctx.restore();
   });
 
+  if (S.mode === 'find' && active) highlighter(ctx, R(active), still ? 1 : ease((now - S.sweepAt) / 480));
+
   if (active) {
     const a = anchorOf(active);
     const [ax, ay] = P(a.x, a.y);
     const tipFresh = S.tip && now - S.tipSeen < 500;
-    if (S.mode === 'guide') {
+    if (seeking) {
       sonar(ctx, S, ax, ay, now, still);
       if (tipFresh) guideLine(ctx, P(S.tip.x, S.tip.y), [ax, ay], now, still);
     }
@@ -233,7 +237,7 @@ function guideLine(ctx, [tx, ty], [ax, ay], now, still) {
 // The fingertip: pink when far, warming to flag yellow as it closes in.
 function fingertip(ctx, S, P, now, still) {
   const [tx, ty] = P(S.tip.x, S.tip.y);
-  const c = S.mode === 'guide' ? 1 - Math.min(1, S.prox ?? 1) : 0;
+  const c = S.mode === 'guide' || S.mode === 'find' ? 1 - Math.min(1, S.prox ?? 1) : 0;
   const col = `rgb(255,${Math.round(79 + 146 * c)},${Math.round(163 - 86 * c)})`;
   ctx.save();
   S.trail.forEach((p, i) => {
@@ -245,7 +249,7 @@ function fingertip(ctx, S, P, now, still) {
     ctx.fill();
   });
   ctx.globalAlpha = 1;
-  const on = S.onTarget && S.mode === 'guide';
+  const on = S.onTarget && (S.mode === 'guide' || S.mode === 'find');
   ctx.shadowColor = 'rgba(16,19,47,.5)';
   ctx.shadowBlur = 12;
   ctx.lineWidth = 4;

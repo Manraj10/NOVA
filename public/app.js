@@ -41,6 +41,10 @@ const T = {
     here: l => `You're on ${l}.`,
     firstOne: 'This is the first one.',
     offline: 'I can answer that once a model key is added.',
+    nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
+    takeYou: "I'll take you there.",
+    checking: 'Checking the whole page.',
+    missed: (n, l) => (n === 1 ? `One more place: ${l}.` : `${n} more places. First: ${l}.`),
   },
   es: {
     hold: 'Mantén el formulario quieto. Lo estoy leyendo.',
@@ -68,6 +72,10 @@ const T = {
     here: l => `Estás en ${l}.`,
     firstOne: 'Este es el primero.',
     offline: 'Puedo responder eso cuando se agregue una clave del modelo.',
+    nothingToFill: title => `${title}. Aquí no hay nada que llenar. Pregúntame dónde está cualquier cosa, o pídeme que lo lea.`,
+    takeYou: 'Te llevo ahí.',
+    checking: 'Reviso toda la hoja.',
+    missed: (n, l) => (n === 1 ? `Falta un lugar: ${l}.` : `Faltan ${n} lugares. Primero: ${l}.`),
   },
   hi: {
     hold: 'फ़ॉर्म को स्थिर रखिए। मैं इसे पढ़ रहा हूँ।',
@@ -95,6 +103,10 @@ const T = {
     here: l => `आप ${l} पर हैं।`,
     firstOne: 'यह पहला है।',
     offline: 'मॉडल की कुंजी जुड़ने पर मैं इसका जवाब दे पाऊँगा।',
+    nothingToFill: title => `${title}। यहाँ भरने के लिए कुछ नहीं है। मुझसे पूछिए कि कुछ भी कहाँ है, या पढ़ने को कहिए।`,
+    takeYou: 'मैं आपको वहाँ ले चलता हूँ।',
+    checking: 'मैं पूरा पन्ना जाँच रहा हूँ।',
+    missed: (n, l) => (n === 1 ? `एक जगह और: ${l}।` : `${n} जगहें और। पहले: ${l}।`),
   },
   zh: {
     hold: '请把表格放稳，我正在读。',
@@ -122,10 +134,14 @@ const T = {
     here: l => `你现在在：${l}。`,
     firstOne: '这是第一处。',
     offline: '加上模型密钥后我就能回答这个问题。',
+    nothingToFill: title => `${title}。这里没有要填的地方。可以问我任何东西在哪里，或者让我读给你听。`,
+    takeYou: '我带你过去。',
+    checking: '我检查一下整页。',
+    missed: (n, l) => (n === 1 ? `还有一处：${l}。` : `还有 ${n} 处。先填：${l}。`),
   },
 };
 
-const ACTION = { start: 'Start', reading: 'Reading…', reveal: 'Reading…', idle: 'Read the form', guide: 'Repeat', write: 'Done writing', check: 'Reading…', done: 'Read another form' };
+const ACTION = { start: 'Start', reading: 'Reading…', reveal: 'Reading…', idle: 'Read the page', guide: 'Repeat', find: 'Repeat', write: 'Done writing', check: 'Reading…', done: 'Read another page' };
 const CUE = { up: '↑', down: '↓', left: '←', right: '→' };
 const KIND = { text: 'Write', date: 'Date', number: 'Number', checkbox: 'Check', signature: 'Sign', button: 'Tap' };
 
@@ -215,7 +231,7 @@ function trackHands(now) {
   S.handPts = r.landmarks || [];
   if (!S.handPts.length) return;
   // While guiding, follow whichever index fingertip is closest to the target.
-  const f = S.mode === 'guide' ? S.fields[S.i] : null;
+  const f = S.mode === 'guide' || S.mode === 'find' ? target() : null;
   const a = f ? anchorOf(f) : null;
   const tips = S.handPts.map(h => h[8]);
   const tip = a ? tips.reduce((p, q) => (dist(q, a) < dist(p, a) ? q : p)) : tips[0];
@@ -297,14 +313,19 @@ async function readForm() {
   setMode('reading');
   S.fields = [];
   S.title = '';
+  S.reviewed = false;
+  S.find = null;
   renderLists();
   say(t().hold);
   await wait(900); // let the camera settle focus and exposure
   try {
+    const t0 = performance.now();
     const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image: snapshot(), lang: S.lang });
+    S.readSecs = (performance.now() - t0) / 1000; // shown to the room: measured, not claimed
     S.title = out.title || '';
     S.fields = (out.fields || []).map(f => ({ ...f, done: false }));
-    if (!S.fields.length) { setMode('idle'); renderLists(); return say(t().none); }
+    // A menu, letter or receipt with nothing to fill is still worth reading: say what it is and offer "where is…".
+    if (!S.fields.length) { setMode('idle'); renderLists(); $('docTitle').textContent = S.title; return say(S.title ? t().nothingToFill(S.title) : t().none); }
     await reveal();
     activate(0, true);
   } catch (e) {
@@ -326,7 +347,7 @@ async function reveal() {
   await Promise.all([say(t().count(S.title, S.fields.length)), wait(1700)]);
 }
 
-function activate(i, first = false) {
+function activate(i, first = false, intro = '') {
   S.i = i;
   S.arrivedSince = 0;
   S.sweepAt = performance.now();
@@ -334,11 +355,14 @@ function activate(i, first = false) {
   setMode('guide');
   renderLists();
   const f = S.fields[i];
-  say(first ? `${t().first(f.label)} ${t().askHint}` : `${t().next} ${f.label}.`);
+  say(intro || (first ? `${t().first(f.label)} ${t().askHint}` : `${t().next} ${f.label}.`));
 }
 
+// What the finger is being guided to: the field to fill, or any spot the person asked about ("where is the total?").
+const target = () => (S.mode === 'find' ? S.find : S.fields[S.i]);
+
 function guide(now) {
-  const f = S.fields[S.i];
+  const f = target();
   if (!f) return;
   if (!S.tip || now - S.tipSeen > 400) {
     S.onTarget = false;
@@ -354,7 +378,7 @@ function guide(now) {
   pace(now, g);
   if (g.inside) {
     S.arrivedSince ||= now;
-    if (now - S.arrivedSince > 450) arrive(f);
+    if (now - S.arrivedSince > 450) (S.mode === 'find' ? found : arrive)(f);
     return;
   }
   S.arrivedSince = 0;
@@ -372,7 +396,7 @@ const TOL = Math.min(3, Math.max(0.5, Number(new URLSearchParams(location.search
 function offset(f, tip) {
   const k = aspect(), a = anchorOf(f);
   const dx = (a.x - tip.x) * k, dy = a.y - tip.y;
-  const pointy = f.kind === 'checkbox' || f.kind === 'button';
+  const pointy = f.kind === 'checkbox' || f.kind === 'button' || f.kind === 'find';
   const tolX = (pointy ? Math.max(((f.x1 - f.x0) * k) / 2, 0.02) : 0.04) * TOL;
   const tolY = Math.max((f.y1 - f.y0) / 2, 0.02) * TOL;
   const ex = Math.abs(dx) / tolX, ey = Math.abs(dy) / tolY;
@@ -397,6 +421,28 @@ function pace(now, g) {
   S.pulses.push({ t: now, on: g.inside });
   if (S.pulses.length > 8) S.pulses.shift();
   buzz(g.inside ? 25 : 12);
+}
+
+// "Where is the total?" Guide the finger to any spot on the page, read what's there, then carry on.
+function goFind(out) {
+  const back = S.mode === 'find' ? S.find.back : S.mode;
+  S.find = { label: out.label || '', kind: 'find', ...out.box, say: out.say, back, q: S.lastQ };
+  S.arrivedSince = 0;
+  S.sweepAt = performance.now();
+  setMode('find');
+  renderLists();
+  say(t().takeYou);
+}
+
+function found(f) {
+  S.find = null;
+  S.onTarget = false;
+  S.burstAt = performance.now();
+  voice.chime();
+  buzz([40, 40, 80]);
+  setMode(f.back);
+  renderLists();
+  say(f.say);
 }
 
 function arrive(f) {
@@ -471,8 +517,36 @@ function expand(f) {
 function next() {
   const pending = S.fields.map((f, k) => k).filter(k => !S.fields[k].done);
   const n = pending.find(k => k > S.i) ?? pending[0];
-  if (n === undefined) return finish();
+  if (n === undefined) return review();
   activate(n);
+}
+
+const iou = (a, b) => {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  if (w <= 0 || h <= 0) return 0;
+  const i = w * h;
+  return i / ((a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - i);
+};
+
+// Before "all done", look at the whole page once more. Blanks the first read missed, or ones still empty,
+// get added and guided to, so a miss is never silent. One pass per form.
+async function review() {
+  if (S.reviewed || !S.fields.length) return finish();
+  S.reviewed = true;
+  setMode('reading');
+  say(S.sim ? t().checking : `${t().checking} ${t().lift}`);
+  try {
+    if (!S.sim) await handAway({ x0: 0, y0: 0, x1: 1, y1: 1 });
+    const ledger = S.fields.map(({ label, done, skipped, answer: a }) => ({ label, done, skipped, answer: a }));
+    const out = S.sim ? (await wait(1200), S.sim.review(S.lang)) : await api('/api/review', { image: snapshot(), fields: ledger, lang: S.lang });
+    const fresh = (out.missing || []).filter(m => !S.fields.some(f => iou(f, m) > 0.3));
+    if (!fresh.length) return finish();
+    const at = S.fields.length;
+    S.fields.push(...fresh.map(f => ({ ...f, done: false, added: true })));
+    activate(at, false, t().missed(fresh.length, fresh[0].label));
+  } catch {
+    finish();
+  }
 }
 
 // Says what was filled, skipped and flagged. "Hand it in" only when nothing needs another look.
@@ -513,7 +587,7 @@ function again() {
 }
 
 function primary() {
-  ({ start: begin, idle: readForm, guide: repeat, write: finishWriting, done: again })[S.mode]?.();
+  ({ start: begin, idle: readForm, guide: repeat, find: repeat, write: finishWriting, done: again })[S.mode]?.();
 }
 
 // Jump to any field to fill (or refill) it.
@@ -592,10 +666,14 @@ function showHeard(text) {
 }
 
 async function answer(q) {
+  S.lastQ = q;
   app.dataset.talk = 'thinking';
   showHeard(q);
   setCue('think');
   if (localAnswer(q)) return;
+  // Practice mode has no model key, so the drawn form answers "where is…" itself.
+  const hit = S.sim && S.mode !== 'start' && S.sim.find(q, S.lang);
+  if (hit) { talkDone(); return act({ action: 'find', ...hit }); }
   try {
     const out = await api('/api/ask', {
       question: q,
@@ -635,6 +713,7 @@ function act(out) {
     case 'goto': if (out.field >= 0 && out.field < S.fields.length) return goTo(out.field); break;
     case 'repeat': return repeat();
     case 'reread': return again();
+    case 'find': if (out.box) return goFind(out); break;
     case 'language':
       setLang(out.lang);
       // Re-read the page so the field names come back in the new language. The parse prompt skips
@@ -700,6 +779,11 @@ function renderLists() {
   $('count').textContent = S.fields.length ? `${doneCount} of ${S.fields.length}` : '';
 
   $('panelTitle').textContent = S.title || (S.mode === 'reading' ? 'Reading the page…' : 'No form yet');
+  const n = S.fields.length, meta = $('panelMeta'), seek = $('panelFind');
+  meta.hidden = !(n || S.title) || S.mode === 'reading';
+  meta.textContent = n ? `${n} ${n === 1 ? 'place' : 'places'} · read in ${(S.readSecs ?? 0).toFixed(1)} s` : 'Nothing to fill · ask where anything is';
+  seek.hidden = S.mode !== 'find';
+  seek.textContent = S.mode === 'find' ? (S.find?.q ? `Finding: “${S.find.q}”` : 'Finding it on the page') : '';
   $('fieldList').replaceChildren(...S.fields.map((f, k) => {
     const li = document.createElement('li');
     li.dataset.state = state(f, k);
@@ -715,7 +799,7 @@ function renderLists() {
     label.textContent = f.label;
     const kind = document.createElement('span');
     kind.className = 'f-kind';
-    kind.textContent = f.skipped ? 'Skipped' : f.review ? 'Check this' : KIND[f.kind] || 'Write';
+    kind.textContent = f.skipped ? 'Skipped' : f.review ? 'Check this' : f.added ? 'Final check' : KIND[f.kind] || 'Write';
     body.append(label, kind);
     if (f.answer) {
       const a = document.createElement('span');
@@ -763,9 +847,9 @@ function loop(now) {
   resize();
   if (S.sim && S.pointer) setTip(S.pointer.x, S.pointer.y, now);
   trackHands(now);
-  if (S.mode === 'guide' && !app.dataset.talk) guide(now); // guidance pauses while you talk
+  if ((S.mode === 'guide' || S.mode === 'find') && !app.dataset.talk) guide(now); // guidance pauses while you talk
   else S.prox = 1;
-  $('cue').style.setProperty('--close', S.mode === 'guide' ? (1 - S.prox).toFixed(2) : 0);
+  $('cue').style.setProperty('--close', S.mode === 'guide' || S.mode === 'find' ? (1 - S.prox).toFixed(2) : 0);
   tickWords(now);
   render(ctx, S, source(), now);
 }

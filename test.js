@@ -7,7 +7,11 @@ const seen = [];
 const PARSE = { title: 'Clinic form', fields: [{ label: 'Full name', kind: 'text', box_2d: [180, 330, 220, 920], say: 'Write your full name.', hint: '' }, { label: 'Bad', kind: 'weird', box_2d: [1, 2], say: '', hint: '' }] };
 const READ = { text: 'Alex Kim', legible: true, spoken: 'You wrote Alex Kim.' };
 const ASK = { say: 'Skipping it.', action: 'skip', field: -1, lang: 'en' };
-const pick = body => (body.includes('close-up') ? READ : body.includes('just said') ? ASK : PARSE);
+const REVIEW = { summary: 'One place is still empty.', missing: [{ label: 'Initials', kind: 'text', box_2d: [700, 100, 740, 400], say: 'Write your initials.', hint: '' }] };
+const FIND = { say: 'The total is $24.50.', action: 'find', field: -1, lang: 'en', box_2d: [800, 600, 850, 900] };
+const LOST = { say: "I don't see a moon on this page.", action: 'find', field: -1, lang: 'en', box_2d: [] };
+const pick = body => (body.includes('close-up') ? READ : body.includes('finished filling in') ? REVIEW
+  : body.includes('where is the total') ? FIND : body.includes('where is the moon') ? LOST : body.includes('just said') ? ASK : PARSE);
 
 let rejectSchemas = false; // a route that refuses response_format, to prove the plain-JSON retry
 const server = http.createServer(async (req, res) => {
@@ -102,6 +106,21 @@ assert.ok(!seen.at(-1).body.response_format && seen.at(-1).body.messages[0].cont
 rejectSchemas = false;
 delete process.env.OPENROUTER_MODEL;
 console.log('ok  openrouter: other key name, bad model, fenced JSON, schema-less retry');
+
+// "Where is…" comes back with a box to guide the finger to; a find with no usable box is only spoken.
+// The final check returns places the first read missed.
+only('GEMINI_API_KEY');
+const spot = await ai.ask({ question: 'where is the total', image: IMG, fields: [], current: -1, mode: 'idle', lang: 'en' });
+assert.equal(spot.action, 'find');
+assert.deepEqual(spot.box, { x0: 0.6, y0: 0.8, x1: 0.9, y1: 0.85 });
+const lost = await ai.ask({ question: 'where is the moon', image: IMG, fields: [], current: -1, mode: 'idle', lang: 'en' });
+assert.equal(lost.action, 'none');
+assert.equal(lost.box, null);
+const rev = await ai.reviewForm({ image: IMG, fields: [{ label: 'Full name', done: true, answer: 'Alex Kim' }], lang: 'en' });
+assert.equal(rev.missing.length, 1);
+assert.equal(rev.missing[0].label, 'Initials');
+assert.equal(rev.summary, 'One place is still empty.');
+console.log('ok  find returns a box, a boxless find is spoken, review returns missed places');
 
 // A retired Gemini model name falls through to the next one.
 only('GEMINI_API_KEY');
