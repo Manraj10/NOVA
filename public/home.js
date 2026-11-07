@@ -43,8 +43,11 @@ function handle(text, echoContext) {
   if (voice.echo(text, echoContext)) return 'echo';
   const destination = voice.navigation?.(text);
   if (destination) { go(destination); return destination; }
-  const phrase = String(text || '').trim().toLowerCase().replace(/[,.!?。！？]+$/g, '').replace(/\s+/g, ' ');
-  if (/^(?:(?:hey|hi|okay|ok) nib[ ,]+)?(?:help|options|what can you do|what are my options)$/.test(phrase)) {
+  // The shared wake parser knows every way "Nib" gets spelled ("Hey, Mib, help." happened live).
+  const wake = voice.wake?.(text);
+  if (wake && !wake.rest) { voice.say('Yes? Say Paper, Around me, or Memory.'); return 'wake'; }
+  const phrase = String(wake ? wake.rest : text || '').trim().toLowerCase().replace(/[,.!?。！？]+$/g, '').replace(/\s+/g, ' ');
+  if (/^(?:(?:hey|hi|okay|ok)[ ,]+nib[ ,]+)?(?:help|options|what can you do|what are my options|what can i say)$/.test(phrase)) {
     voice.say(MENU); return 'menu';
   }
   return null;
