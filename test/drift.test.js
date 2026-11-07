@@ -372,3 +372,25 @@ test('low texture has an explicit unavailable guarantee, not a silent stable res
   assert.equal(f.check(empty), false);
   assert.equal(f.check(empty), true, 'loss of printed detail cannot verify old field geometry');
 });
+
+
+test('a nearby occluder clears the current patch but masks shifted search patches', () => {
+  const f = fixture(), image = form();
+  // The printed corner near (27,31) has a clear fixed patch. The painted hand
+  // starts10px to its right: inside the8px search window plus patch support,
+  // outside the fixed5px patch plus3px margin. Pixels and mask are identical.
+  const hand = [{ x0: 37 / 240, y0: 28 / 320, x1: 42 / 240, y1: 35 / 320 }];
+  assert(f.drift.capture(source(image)));
+  const still = coveredBy(image, hand);
+  assert.equal(f.check(still, hand), false);
+  assert.equal(f.drift.status, 'ready');
+  assert.equal(f.drift.verified, true);
+  // Move the page8px under the SAME hand. That corner's shifted patch is now
+  // partially covered; other exposed evidence must detect motion without using it.
+  const shifted = coveredBy(transformed(image, { dx: 8 }), hand);
+  assert.equal(f.check(shifted, hand), false);
+  assert.equal(f.drift.status, 'suspect');
+  assert.equal(f.drift.verified, false);
+  assert.equal(f.check(shifted, hand), true);
+  assert.equal(f.drift.status, 'moved');
+});
