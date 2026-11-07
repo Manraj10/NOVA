@@ -1272,7 +1272,8 @@ function setCue(c) {
 }
 
 function renderLists() {
-  const state = (f, k) => (f.skipped ? 'skipped' : f.done ? 'done' : k === S.i && ['guide', 'write', 'check', 'confirm'].includes(S.mode) ? 'active' : 'todo');
+  renderSessionContext();
+  const state = (f, k) => (f.skipped ? 'skipped' : f.done && (f.review || f.stale) ? 'review' : f.done ? 'done' : k === S.i && ['guide', 'write', 'check', 'confirm'].includes(S.mode) ? 'active' : 'todo');
   const prev = S.prevStates || [];
   S.prevStates = S.fields.map((f, k) => state(f, k));
   const just = (li, k) => {
@@ -1286,9 +1287,10 @@ function renderLists() {
     li.title = `${k + 1}. ${f.label}`;
     return li;
   }));
-  const doneCount = S.fields.filter(f => f.done).length;
+  const doneCount = S.fields.filter(f => f.done && !f.skipped).length;
   app.style.setProperty('--p', S.fields.length ? doneCount / S.fields.length : 0);
-  $('count').innerHTML = S.fields.length ? `<b>${doneCount}</b> of ${S.fields.length}` : ''; // numbers only
+  const kept = ({ en: 'kept', es: 'guardados', hi: 'रखे', zh: '已保留' })[S.lang] || 'kept';
+  $('count').innerHTML = S.fields.length ? `<b>${doneCount}</b> / ${S.fields.length} ${kept}` : ''; // numbers + fixed UI strings only
 
   $('panelTitle').textContent = S.title || (S.mode === 'reading' ? 'Reading the page…' : 'No form yet');
   const n = S.fields.length, meta = $('panelMeta'), seek = $('panelFind');
@@ -1299,7 +1301,7 @@ function renderLists() {
   $('fieldList').replaceChildren(...S.fields.map((f, k) => {
     const li = document.createElement('li');
     li.dataset.state = state(f, k);
-    if (f.review) li.dataset.flag = 'review';
+    if (f.review || f.stale) li.dataset.flag = 'review';
     else if (f.added) li.dataset.flag = 'added';
     if (li.dataset.state === 'active') li.setAttribute('aria-current', 'step');
     just(li, k);
@@ -1307,7 +1309,7 @@ function renderLists() {
     else if (!li.dataset.just) li.style.animation = 'none';
     const n = document.createElement('span');
     n.className = 'n';
-    n.textContent = f.review ? '?' : f.done && !f.skipped ? '✓' : k + 1;
+    n.textContent = f.review || f.stale ? '?' : f.done && !f.skipped ? '✓' : k + 1;
     const body = document.createElement('div');
     body.className = 'f-body';
     const label = document.createElement('span');
@@ -1315,11 +1317,11 @@ function renderLists() {
     label.textContent = f.label;
     const sr = document.createElement('span');
     sr.className = 'sr';
-    sr.textContent = `, ${f.review ? 'check this' : f.added ? 'caught by the final check' : li.dataset.state}`;
+    sr.textContent = `, ${f.stale ? 'location needs checking' : f.review ? 'check this' : f.added ? 'caught by the final check' : li.dataset.state}`;
     label.append(sr);
     const kind = document.createElement('span');
     kind.className = 'f-kind';
-    kind.textContent = f.skipped ? 'Skipped' : f.review ? 'Check this' : f.added ? 'Final check' : KIND[f.kind] || 'Write';
+    kind.textContent = f.skipped ? 'Skipped' : f.stale ? 'Location needs checking' : f.review ? 'Check this' : f.added ? 'Final check' : KIND[f.kind] || 'Write';
     body.append(label, kind);
     if (f.answer) {
       const a = document.createElement('span');
@@ -1340,22 +1342,48 @@ function renderLists() {
   const foot = $('panelFoot');
   if (S.mode === 'done') {
     const filled = S.fields.filter(f => f.done && !f.skipped).length;
-    const caught = S.fields.filter(f => f.added).length, look = S.fields.filter(f => f.review || f.skipped || !f.done).length;
+    const caught = S.fields.filter(f => f.added).length, look = S.fields.filter(f => f.review || f.stale || f.skipped || !f.done).length;
     const clean = !look && !S.reviewFailed;
     const cell = (k, v, warn) => `<div${warn ? ' class="warn"' : ''}><dt>${k}</dt><dd>${v}</dd></div>`;
     // Numbers and fixed English only: nothing from the page or the model goes into this HTML.
-    foot.innerHTML = `<p class="ft-kicker">${clean ? 'Completed independently' : 'Finished · needs a look'}</p><strong class="ft-time">${S.elapsed}</strong><span class="ft-unit">start to finish</span><dl class="ft-grid">`
-      + cell('Filled without help', `${filled}<small>/${S.fields.length}</small>`)
+    foot.innerHTML = `<p class="ft-kicker">${clean ? 'Answers kept' : 'Review before you finish'}</p><strong class="ft-time">${S.elapsed}</strong><span class="ft-unit">start to finish</span><dl class="ft-grid">`
+      + cell('Answers kept', `${filled}<small>/${S.fields.length}</small>`)
       + cell('Read the page in', `${(S.readSecs ?? 0).toFixed(1)}<small> s</small>`)
       + cell('Final check caught', S.reviewFailed ? '–' : caught)
-      + cell('Needs another look', look, look > 0 || S.reviewFailed) + '</dl>';
+      + cell('Needs another look', look, look > 0 || S.reviewFailed) + '</dl>'
+      + (S.reviewFailed ? '<p class="ft-note">The final page check did not finish. Review the paper before using it.</p>' : '');
     foot.toggleAttribute('data-open', !clean);
     foot.hidden = false;
   } else foot.hidden = true;
 }
 
+// Context remains visible on a phone, where the full field list is hidden. These are
+// presentation labels only: they never verify coordinates, accept an answer or steer.
+function renderSessionContext() {
+  const mode = $('sessionMode'), status = $('sessionState'), field = $('currentField');
+  if (!mode || !status || !field) return;
+  const update = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+  const english = { practice: 'Practice', live: 'Live camera', ready: 'Ready', reading: 'Reading the page', reveal: 'Places found', checkin: 'Find your fingertip', guide: 'Follow the directions', find: 'Find on the page', write: 'Your turn to write', check: 'Reading your writing', confirm: 'Check the readback', done: 'Review your answers', listening: 'Listening', thinking: 'Thinking' };
+  const copy = ({
+    en: english,
+    es: { practice: 'Práctica', live: 'Cámara en vivo', ready: 'Listo', reading: 'Leyendo la página', reveal: 'Lugares encontrados', checkin: 'Buscando tu dedo', guide: 'Sigue las indicaciones', find: 'Busca en la página', write: 'Es tu turno de escribir', check: 'Leyendo lo escrito', confirm: 'Comprueba la lectura', done: 'Revisa tus respuestas', listening: 'Escuchando', thinking: 'Pensando' },
+    hi: { practice: 'अभ्यास', live: 'लाइव कैमरा', ready: 'तैयार', reading: 'पन्ना पढ़ रहा हूँ', reveal: 'जगहें मिल गईं', checkin: 'उंगली खोज रहा हूँ', guide: 'निर्देशों का पालन करें', find: 'पन्ने पर खोजें', write: 'अब आप लिखें', check: 'आपका लिखा पढ़ रहा हूँ', confirm: 'पढ़ा हुआ जाँचें', done: 'अपने उत्तर जाँचें', listening: 'सुन रहा हूँ', thinking: 'सोच रहा हूँ' },
+    zh: { practice: '练习', live: '实时相机', ready: '准备就绪', reading: '正在阅读页面', reveal: '已找到填写位置', checkin: '正在寻找指尖', guide: '请按指示移动', find: '在页面上查找', write: '请开始书写', check: '正在读取手写内容', confirm: '请核对识别结果', done: '检查你的答案', listening: '正在聆听', thinking: '正在思考' },
+  })[S.lang] || english;
+  update(mode, S.sim ? copy.practice : copy.live);
+  mode.dataset.kind = S.sim ? 'practice' : 'live';
+  update(status, copy[app.dataset.talk || S.mode] || copy.ready);
+  const active = ['guide', 'write', 'check', 'confirm'].includes(S.mode) && S.fields[S.i];
+  const found = S.mode === 'find' && S.find;
+  field.hidden = !active && !found;
+  update(field, active ? `${S.i + 1}. ${active.label}` : found ? (found.q || found.label || '') : '');
+  field.title = field.textContent;
+  app.toggleAttribute('data-field-active', !field.hidden);
+}
+
 // The judges' readout: is the hand really tracked, and how fast is the AI answering?
 function hud(now) {
+  renderSessionContext();
   if (!S.sim && ambientVideo.srcObject !== video.srcObject) { ambientVideo.srcObject = video.srcObject; ambientVideo.play().catch(() => {}); }
   const secs = (now - (S.hudAt || now)) / 1000 || 1;
   S.fps = Math.round((S.trackN || 0) / secs);
