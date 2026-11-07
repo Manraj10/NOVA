@@ -51,6 +51,15 @@ export function startBot(S) {
       dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
       dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }));
     }
+    // Confirms the readback like a person would.
+    if (S.mode === 'confirm' && !S.botConfirming) {
+      S.botConfirming = true;
+      setTimeout(() => {
+        S.botConfirming = false;
+        dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+        dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }));
+      }, 700);
+    }
     if (S.mode === 'done' && !stats.finished) {
       stats.finished = true;
       const s = stats.fields.map(f => f.seconds);

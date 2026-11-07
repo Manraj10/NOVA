@@ -44,6 +44,21 @@ const T = {
     offline: 'I can answer that once a model key is added.',
     nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
     takeYou: "I'll take you there.",
+    firstShort: l => `First: ${l}.`,
+    cancelled: 'Okay, stopped looking.',
+    notFound: "I couldn't get you there. Let's carry on.",
+    noKey: "Form reading isn't set up on this computer yet.",
+    slow: 'That took too long. Hold still and try again.',
+    busy: 'The reader is busy. Wait a few seconds, then try again.',
+    noCredit: "The reader's key is out of credit.",
+    readFail: "I couldn't read that. Hold still and try again.",
+    confirm: 'Tap to keep it, or say redo.',
+    redo: 'Okay. Write it again, then tap.',
+    notChecked: "I couldn't check the whole page, so have someone look it over before you hand it in.",
+    reopened: l => `${l} still looks empty to me. Let's go back to it.`,
+    checkin: 'Before we start: rest one finger of your free hand on the page, and keep the pen away for a moment.',
+    gotIt: 'Got it. I can see your finger.',
+    oneHand: 'Just one hand for now.',
     stillReading: 'Still reading. Long forms take a moment.',
     almost: 'Almost there. Keep the page still.',
     checking: 'Checking the whole page.',
@@ -78,6 +93,21 @@ const T = {
     offline: 'Puedo responder eso cuando se agregue una clave del modelo.',
     nothingToFill: title => `${title}. Aquí no hay nada que llenar. Pregúntame dónde está cualquier cosa, o pídeme que lo lea.`,
     takeYou: 'Te llevo ahí.',
+    firstShort: l => `Primero: ${l}.`,
+    cancelled: 'Bien, dejo de buscar.',
+    notFound: 'No pude llevarte ahí. Sigamos.',
+    noKey: 'La lectura de formularios aún no está configurada en esta computadora.',
+    slow: 'Tardó demasiado. Mantén la hoja quieta e inténtalo de nuevo.',
+    busy: 'El lector está ocupado. Espera unos segundos y vuelve a intentarlo.',
+    noCredit: 'La clave del lector se quedó sin crédito.',
+    readFail: 'No pude leerlo. Mantén la hoja quieta e inténtalo de nuevo.',
+    confirm: 'Toca para conservarlo, o di rehacer.',
+    redo: 'Bien. Escríbelo otra vez y toca.',
+    notChecked: 'No pude revisar toda la hoja; pide a alguien que la revise antes de entregarla.',
+    reopened: l => `${l} todavía parece vacío. Volvamos ahí.`,
+    checkin: 'Antes de empezar: apoya un dedo de la mano libre en la hoja y aleja el bolígrafo un momento.',
+    gotIt: 'Listo. Veo tu dedo.',
+    oneHand: 'Por ahora, solo una mano.',
     stillReading: 'Sigo leyendo. Los formularios largos toman un momento.',
     almost: 'Ya casi. Mantén la hoja quieta.',
     checking: 'Reviso toda la hoja.',
@@ -112,6 +142,21 @@ const T = {
     offline: 'मॉडल की कुंजी जुड़ने पर मैं इसका जवाब दे पाऊँगा।',
     nothingToFill: title => `${title}। यहाँ भरने के लिए कुछ नहीं है। मुझसे पूछिए कि कुछ भी कहाँ है, या पढ़ने को कहिए।`,
     takeYou: 'मैं आपको वहाँ ले चलता हूँ।',
+    firstShort: l => `पहले: ${l}।`,
+    cancelled: 'ठीक है, ढूँढना बंद किया।',
+    notFound: 'मैं आपको वहाँ नहीं ले जा पाया। आगे चलते हैं।',
+    noKey: 'इस कंप्यूटर पर फ़ॉर्म पढ़ना अभी सेट नहीं है।',
+    slow: 'बहुत देर लगी। स्थिर रखिए और फिर से कोशिश कीजिए।',
+    busy: 'पढ़ने वाला व्यस्त है। कुछ सेकंड रुकिए, फिर कोशिश कीजिए।',
+    noCredit: 'पढ़ने वाले की कुंजी का क्रेडिट खत्म हो गया है।',
+    readFail: 'मैं वह पढ़ नहीं पाया। स्थिर रखिए और फिर से कोशिश कीजिए।',
+    confirm: 'रखने के लिए टैप कीजिए, या दोबारा लिखो बोलिए।',
+    redo: 'ठीक है। फिर से लिखिए, फिर टैप कीजिए।',
+    notChecked: 'मैं पूरा पन्ना जाँच नहीं पाया, जमा करने से पहले किसी से दिखवा लीजिए।',
+    reopened: l => `${l} अभी भी खाली लगता है। वहीं वापस चलते हैं।`,
+    checkin: 'शुरू करने से पहले: खाली हाथ की एक उंगली पन्ने पर रखिए, और पेन थोड़ी देर दूर रखिए।',
+    gotIt: 'ठीक है। मुझे आपकी उंगली दिख रही है।',
+    oneHand: 'अभी सिर्फ़ एक हाथ।',
     stillReading: 'अभी पढ़ रहा हूँ। लंबे फ़ॉर्म में थोड़ा समय लगता है।',
     almost: 'बस थोड़ा और। पन्ना स्थिर रखिए।',
     checking: 'मैं पूरा पन्ना जाँच रहा हूँ।',
@@ -146,6 +191,21 @@ const T = {
     offline: '加上模型密钥后我就能回答这个问题。',
     nothingToFill: title => `${title}。这里没有要填的地方。可以问我任何东西在哪里，或者让我读给你听。`,
     takeYou: '我带你过去。',
+    firstShort: l => `第一处：${l}。`,
+    cancelled: '好，不找了。',
+    notFound: '我没能带你过去，我们继续吧。',
+    noKey: '这台电脑还没有设置读表功能。',
+    slow: '时间太长了。请保持不动，再试一次。',
+    busy: '读取服务正忙，请等几秒再试。',
+    noCredit: '读取服务的额度用完了。',
+    readFail: '我没能读出来。请保持不动，再试一次。',
+    confirm: '点一下保留，或者说“重写”。',
+    redo: '好的，再写一遍，然后点一下。',
+    notChecked: '我没能检查整页，交表前请找人看一下。',
+    reopened: l => `${l} 看起来还是空的，我们回去看看。`,
+    checkin: '开始之前：用空着的手把一根手指放在纸上，先把笔拿开一下。',
+    gotIt: '好了，我看到你的手指了。',
+    oneHand: '现在只用一只手。',
     stillReading: '还在读。长表格需要一点时间。',
     almost: '快好了。请保持纸张不动。',
     checking: '我检查一下整页。',
@@ -153,7 +213,7 @@ const T = {
   },
 };
 
-const ACTION = { start: 'Start', reading: 'Reading…', reveal: 'Reading…', idle: 'Read the page', guide: 'Repeat', find: 'Repeat', write: 'Done writing', check: 'Reading…', done: 'Read another page' };
+const ACTION = { confirm: 'Keep it', checkin: 'Skip', start: 'Start', reading: 'Reading…', reveal: 'Reading…', idle: 'Read the page', guide: 'Repeat', find: 'Repeat', write: 'Done writing', check: 'Reading…', done: 'Read another page' };
 const CUE = { up: '↑', down: '↓', left: '←', right: '→' };
 const KIND = { text: 'Write', date: 'Date', number: 'Number', checkbox: 'Check', signature: 'Sign', button: 'Tap' };
 
@@ -253,6 +313,7 @@ function trackHands(now) {
   if (!S.handPts.length) { S.pointerIdx = -1; return; }
   S.handAt = now;
   S.pointerIdx = pickPointer(now);
+  if (S.pointerIdx < 0) return;
   const tip = S.handPts[S.pointerIdx][8];
   setTip(tip.x, tip.y, now);
 }
@@ -264,20 +325,36 @@ const pinching = h => Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y) < 0.45 * Math
 function pickPointer(now) {
   const H = S.handPts, L = S.handLabels;
   if (H.length === 1) {
-    if (!S.pointerLabel && L[0] && !pinching(H[0])) S.pointerLabel = L[0];
+    // The pointing hand left and only the pen hand is in view: follow nothing rather than the pen.
+    if (S.pointerLabel && S.pointerLabel !== 'any' && L[0] && L[0] !== S.pointerLabel && pinching(H[0])) return -1;
     return 0;
   }
   const fresh = S.tip && now - S.tipSeen < 600;
   // Staying with the followed hand only breaks near-ties (jitter), so one wrong frame can't stick.
-  const score = (h, i) => (S.pointerLabel && L[i] === S.pointerLabel ? 2 : 0) - (pinching(h) ? 1.5 : 0)
+  const score = (h, i) => (S.pointerLabel && L[i] === S.pointerLabel ? 1 : 0) - (pinching(h) ? 2 : 0)
     + (fresh && dist(h[8], S.tip) < 0.06 ? 1 : 0);
   let best = 0;
   H.forEach((h, i) => { if (score(h, i) > score(H[best], best)) best = i; });
   return best;
 }
 
+// One Euro filter (Casiez et al. 2012) for the camera fingertip: heavy smoothing when the finger rests
+// (no jitter at the target), light smoothing when it moves (no lag). The practice mouse needs none.
+const EURO = { minCutoff: 1, beta: 7, dCutoff: 1 }; // beta tuned for frame-fraction units
+const alpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
 function setTip(x, y, now) {
-  S.tip = S.tip && now - S.tipSeen < 300 ? { x: S.tip.x + (x - S.tip.x) * 0.55, y: S.tip.y + (y - S.tip.y) * 0.55 } : { x, y };
+  const e = S.euro;
+  if (S.sim || !S.tip || !e || now - S.tipSeen > 300) S.euro = { x, y, dx: 0, dy: 0, t: now };
+  else {
+    const dt = Math.max(0.005, (now - e.t) / 1000), ad = alpha(EURO.dCutoff, dt);
+    e.dx += ad * ((x - e.x) / dt - e.dx);
+    e.dy += ad * ((y - e.y) / dt - e.dy);
+    const a = alpha(EURO.minCutoff + EURO.beta * Math.hypot(e.dx, e.dy), dt);
+    e.x += a * (x - e.x);
+    e.y += a * (y - e.y);
+    e.t = now;
+  }
+  S.tip = { x: S.euro.x, y: S.euro.y };
   S.tipSeen = now;
   S.trail.push({ ...S.tip });
   if (S.trail.length > 16) S.trail.shift();
@@ -347,7 +424,19 @@ let wake = null;
 async function stayAwake() {
   try { wake = await navigator.wakeLock?.request('screen'); } catch { /* not supported or not allowed: fine */ }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && wake?.released !== false && S.mode !== 'start') stayAwake(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || S.mode === 'start') return;
+  if (wake?.released !== false) stayAwake();
+  voice.ctx?.resume?.();
+  if (S.sim) return;
+  const track = video.srcObject?.getVideoTracks()[0];
+  if (track?.readyState === 'live') video.play().catch(() => {});
+  else if (track) {
+    video.srcObject.getTracks().forEach(x => x.stop());
+    lastVideoTime = -1;
+    startCamera().catch(() => say(t().noCamera));
+  }
+});
 
 async function begin() {
   if (S.mode !== 'start') return;
@@ -366,7 +455,9 @@ async function readForm() {
   S.fields = [];
   S.title = '';
   S.reviewed = false;
+  S.reviewFailed = false;
   S.find = null;
+  S.pointerLabel = null; // every page starts with a fresh finger check-in (camera only)
   renderLists();
   say(t().hold);
   await wait(900); // let the camera settle focus and exposure
@@ -388,11 +479,12 @@ async function readForm() {
     // A menu, letter or receipt with nothing to fill is still worth reading: say what it is and offer "where is…".
     if (!S.fields.length) { setMode('idle'); renderLists(); $('docTitle').textContent = S.title; return say(S.title ? t().nothingToFill(S.title) : t().none); }
     await reveal();
-    activate(0, true);
+    if (S.sim || S.pointerLabel) activate(0, true);
+    else checkin();
   } catch (e) {
     setMode('idle');
     renderLists();
-    say(e.message);
+    speakErr(e);
   }
 }
 
@@ -408,6 +500,35 @@ async function reveal() {
   await Promise.all([say(`${t().count(S.title, S.fields.length)} ${t().askHint}`), wait(1700)]);
 }
 
+// Finger check-in: before guiding, wait for one open hand (not holding a pen) to rest on the page,
+// lock it as the pointing hand, and say so. Two hands get a nudge; nothing ever dead-ends.
+function checkin() {
+  setMode('checkin');
+  S.checkinAt = performance.now();
+  S.checkinHeld = 0;
+  S.lastNudge = 0;
+  renderLists();
+  say(t().checkin);
+}
+
+function checkinTick(now) {
+  const H = now - (S.handAt || 0) < 300 ? S.handPts : [];
+  const one = H.length === 1 && !pinching(H[0]);
+  if (one && S.checkinLabel !== S.handLabels[0]) { S.checkinLabel = S.handLabels[0]; S.checkinHeld = 0; } // same hand for the whole hold
+  if (one) {
+    S.checkinHeld ||= now;
+    if (now - S.checkinHeld > 900) {
+      S.pointerLabel = S.handLabels[0] || S.pointerLabel || 'any';
+      voice.chime();
+      buzz([30, 30, 60]);
+      return activate(0, true, `${t().gotIt} ${t().firstShort(S.fields[0].label)}`);
+    }
+  } else S.checkinHeld = 0;
+  if (H.length > 1 && now - S.lastNudge > 5000 && !voice.busy()) { S.lastNudge = now; say(t().oneHand, { cue: true }); }
+  if (!H.length && now - S.checkinAt > 9000 && now - S.lastNudge > 9000 && !voice.busy()) { S.lastNudge = now; say(t().checkin, { soft: true }); }
+  if (now - S.checkinAt > 25000) activate(0, true); // never strand anyone here
+}
+
 function activate(i, first = false, intro = '') {
   S.i = i;
   S.arrivedSince = 0;
@@ -417,7 +538,9 @@ function activate(i, first = false, intro = '') {
   renderLists();
   const f = S.fields[i];
   S.lastDir = null;
-  say(intro || (first ? t().first(f.label) : `${t().next} ${f.label}.`), { soft: true });
+  S.tolBoost = 1;
+  S.nearSince = 0;
+  say(intro || (first ? t().first(f.label) : `${t().next} ${f.label}.`)); // the field name must finish before any direction
 }
 
 // What the finger is being guided to: the field to fill, or any spot the person asked about ("where is the total?").
@@ -426,8 +549,10 @@ const target = () => (S.mode === 'find' ? S.find : S.fields[S.i]);
 function guide(now) {
   const f = target();
   if (!f) return;
+  if (S.mode === 'find' && now - f.at > 30000) return abortFind(t().notFound);
   if (!S.tip || now - S.tipSeen > 400) {
     S.onTarget = false;
+    S.arrivedSince = 0; // a finger that comes back must dwell again, not land on an old timer
     S.prox = 1;
     setCue('');
     if (now - S.lastNoHand > 5000 && !voice.busy()) { S.lastNoHand = now; say(t().noHand, { cue: true }); }
@@ -446,6 +571,10 @@ function guide(now) {
     return;
   }
   S.arrivedSince = 0;
+  if (g.m < 2) {
+    S.nearSince ||= now;
+    if (now - S.nearSince > 2500 && (S.tolBoost || 1) < 1.75) { S.tolBoost = (S.tolBoost || 1) + 0.25; S.nearSince = now; }
+  } else S.nearSince = 0;
   // A change of direction is said at once; the same direction repeats only every 1.3 s.
   const turn = g.dir !== S.lastDir || g.near !== S.lastNear;
   if (!voice.busy() && now - S.lastCue > (turn ? 300 : 1300)) {
@@ -465,8 +594,9 @@ function offset(f, tip) {
   const k = aspect(), a = anchorOf(f);
   const dx = (a.x - tip.x) * k, dy = a.y - tip.y;
   const pointy = f.kind === 'checkbox' || f.kind === 'button' || f.kind === 'find';
-  const tolX = (pointy ? Math.max(((f.x1 - f.x0) * k) / 2, 0.02) : 0.04) * TOL;
-  const tolY = Math.max((f.y1 - f.y0) / 2, 0.02) * TOL;
+  const boost = S.tolBoost || 1; // grows if the finger hovers close but jitter keeps it from landing
+  const tolX = (pointy ? Math.max(((f.x1 - f.x0) * k) / 2, 0.02) : 0.04) * TOL * boost;
+  const tolY = Math.max((f.y1 - f.y0) / 2, 0.02) * TOL * boost;
   const ex = Math.abs(dx) / tolX, ey = Math.abs(dy) / tolY;
   return {
     inside: ex <= 1 && ey <= 1,
@@ -475,6 +605,7 @@ function offset(f, tip) {
     near: Math.max(ex, ey) < 3 || Math.hypot(dx, dy) < 0.1, // within ~3 cm: slow down
     d: Math.hypot(dx, dy),
     dx,
+    m: Math.max(ex, ey),
   };
 }
 
@@ -494,13 +625,27 @@ function pace(now, g) {
 // "Where is the total?" Guide the finger to any spot on the page, read what's there, then carry on.
 function goFind(out) {
   const back = S.mode === 'find' ? S.find.back : S.mode;
-  S.find = { label: out.label || '', kind: 'find', ...out.box, say: out.say, back, q: S.lastQ };
+  S.find = { label: out.label || '', kind: 'find', ...out.box, say: out.say, back, q: S.lastQ, at: performance.now() };
   S.arrivedSince = 0;
   S.sweepAt = performance.now();
   S.lastDir = null;
+  S.tolBoost = 1;
+  S.nearSince = 0;
   setMode('find');
   renderLists();
   say(t().takeYou, { soft: true });
+}
+
+function abortFind(msg) {
+  const back = S.find?.back || 'idle';
+  S.find = null;
+  S.onTarget = false;
+  S.arrivedSince = 0;
+  setMode(back);
+  S.cue = null;
+  setCue(back === 'done' ? 'done' : back === 'write' ? 'write' : '');
+  renderLists();
+  say(msg);
 }
 
 function found(f) {
@@ -510,6 +655,8 @@ function found(f) {
   voice.chime();
   buzz([40, 40, 80]);
   setMode(f.back);
+  S.cue = null;
+  setCue(f.back === 'done' ? 'done' : f.back === 'write' ? 'write' : '');
   renderLists();
   say(f.say);
 }
@@ -539,24 +686,53 @@ async function finishWriting() {
     const empty = !out.text || out.text === 'empty';
     if (empty) {
       readback.result('', false);
+      readback.hide(1800);
       setMode('write');
       return say(t().blank);
     }
     f.answer = out.text;
     f.legible = out.legible;
     f.review = !out.legible; // unclear writing is never silently accepted: flagged, then listed at the end
-    f.done = true;
-    f.doneAt = performance.now();
     readback.result(out.text, out.legible);
+    setMode('confirm'); // only a proposal until the person keeps it
     renderLists();
-    await say(`${out.spoken || t().wrote(f.answer)}${f.review ? ` ${t().unsure}` : ''}`);
+    say(`${out.spoken || t().wrote(f.answer)}${f.review ? ` ${t().unsure}` : ''} ${t().confirm}`);
   } catch (e) {
     readback.hide();
     setMode('write');
-    return say(e.message);
+    return speakErr(e);
   }
-  readback.hide(900);
+}
+
+// Never read provider or model text to a blind user: one short, localized line they can act on.
+function speakErr(e) {
+  const m = e?.message || '';
+  console.warn('[nib]', m);
+  if (/Form reading is off/.test(m)) return say(t().noKey);
+  if (/too long|timed out|TimeoutError/i.test(m)) return say(t().slow);
+  if (/rate-limit|wait a few/i.test(m)) return say(t().busy);
+  if (/out of credits/i.test(m)) return say(t().noCredit);
+  return say(t().readFail);
+}
+
+// The person heard the readback and keeps it.
+function keep() {
+  if (S.mode !== 'confirm') return;
+  const f = S.fields[S.i];
+  f.done = true;
+  f.doneAt = performance.now();
+  readback.hide(600);
   next();
+}
+
+// The readback was wrong: write it again in the same place.
+function redo() {
+  if (S.mode !== 'confirm') return;
+  Object.assign(S.fields[S.i], { answer: '', review: false });
+  readback.hide();
+  setMode('write');
+  renderLists();
+  say(t().redo);
 }
 
 // Wait until no hand covers the field (or 5 s pass), so the photo shows the writing.
@@ -610,12 +786,21 @@ async function review() {
     if (!S.sim) await handAway({ x0: 0, y0: 0, x1: 1, y1: 1 });
     const ledger = S.fields.map(({ label, done, skipped, answer: a }) => ({ label, done, skipped, answer: a }));
     const out = S.sim ? (await wait(1200), S.sim.review(S.lang)) : await api('/api/review', { image: snapshot(), fields: ledger, lang: S.lang });
-    const fresh = (out.missing || []).filter(m => !S.fields.some(f => iou(f, m) > 0.3));
-    if (!fresh.length) return finish();
-    const at = S.fields.length;
+    S.reviewFailed = out.unplaced > 0; // a missing place it could not locate: the page is not confirmed clear
+    const fresh = [], reopened = [];
+    for (const m of out.missing || []) {
+      const hit = S.fields.find(f => iou(f, m) > 0.3);
+      if (!hit) fresh.push(m);
+      else if (hit.done && !hit.skipped) reopened.push(hit); // "filled", but the page shows it empty (skips stay skipped)
+    }
+    reopened.forEach(f => Object.assign(f, { done: false, answer: '', review: false, reopened: true }));
     S.fields.push(...fresh.map(f => ({ ...f, done: false, added: true })));
-    activate(at, false, t().missed(fresh.length, fresh[0].label));
+    const todo = S.fields.map((f, k) => k).filter(k => !S.fields[k].done);
+    if (!todo.length) return finish();
+    const first = S.fields[todo[0]];
+    activate(todo[0], false, first.reopened ? t().reopened(first.label) : t().missed(todo.length, first.label));
   } catch {
+    S.reviewFailed = true; // the page was NOT checked: never say it's ready to hand in
     finish();
   }
 }
@@ -636,12 +821,15 @@ function finish() {
     t().all(filled.length),
     skipped.length && t().skipped(skipped.join(', ')),
     review.length && t().review(review.join(', ')),
-    !skipped.length && !review.length && t().handIn,
+    S.reviewFailed && t().notChecked,
+    !skipped.length && !review.length && !S.reviewFailed && t().handIn,
   ].filter(Boolean).join(' '));
 }
 
 function skip() {
+  if (S.mode === 'find') return abortFind(t().cancelled);
   if (S.mode !== 'guide' && S.mode !== 'write') return;
+  readback.hide();
   const f = S.fields[S.i];
   f.done = true;
   f.skipped = true;
@@ -658,7 +846,7 @@ function again() {
 }
 
 function primary() {
-  ({ start: begin, idle: readForm, guide: repeat, find: repeat, write: finishWriting, done: again })[S.mode]?.();
+  ({ start: begin, confirm: keep, checkin: () => activate(0, true), idle: readForm, guide: repeat, find: repeat, write: finishWriting, done: again })[S.mode]?.();
 }
 
 // Jump to any field to fill (or refill) it.
@@ -671,6 +859,7 @@ function goTo(k) {
 }
 
 function back() {
+  if (S.mode === 'find') return abortFind(t().cancelled); // never wipe an answer just to stop looking
   const k = S.mode === 'done' ? S.fields.length - 1 : S.i - 1;
   if (k < 0) return say(t().firstOne);
   goTo(k);
@@ -686,7 +875,8 @@ function setLang(code) {
 }
 
 function onVoiceCommand(cmd, rest) {
-  if (cmd === 'done') { if (S.mode === 'write') finishWriting(); }
+  if (cmd === 'done') { if (S.mode === 'write') finishWriting(); else if (S.mode === 'confirm') keep(); }
+  else if (cmd === 'redo') redo();
   else if (cmd === 'repeat') repeat();
   else if (cmd === 'skip') skip();
   else if (cmd === 'ask') rest ? answer(rest) : talkStart({ auto: true });
@@ -758,7 +948,8 @@ async function answer(q) {
     act(out);
   } catch (e) {
     talkDone();
-    say(S.sim && /Form reading is off/.test(e.message) ? t().offline : e.message);
+    if (S.sim && /Form reading is off/.test(e.message)) say(t().offline);
+    else speakErr(e);
   }
 }
 
@@ -768,9 +959,12 @@ function localAnswer(q) {
   const f = S.fields[S.i];
   const run = fn => { talkDone(); fn(); return true; };
   if (/^(i'?m )?(done|finished)$|^next$|^listo$|^terminé$/.test(s) && S.mode === 'write') return run(finishWriting);
+  if (/^(yes|keep( it)?|done|ok(ay)?|correct|sí|listo|हाँ|好|对)$/.test(s) && S.mode === 'confirm') return run(keep);
+  if (/^(redo|no|wrong|that'?s wrong|rehacer|no es correcto|दोबारा लिखो|重写)$/.test(s) && S.mode === 'confirm') return run(redo);
   if (/^(repeat|again|say (that|it) again|repite|otra vez)$/.test(s)) return run(repeat);
   if (/^(skip|skip (this|it|this one)|saltar)$/.test(s)) return run(skip);
   if (/^(go )?back$|^previous( one)?$|^anterior$/.test(s)) return run(back);
+  if (/^(cancel|never ?mind|stop|forget it|cancelar|olvídalo|रहने दो|算了|取消)$/.test(s) && S.mode === 'find') return run(() => abortFind(t().cancelled));
   if (/how many (are )?(left|more)|cuántos faltan/.test(s) && S.fields.length) return run(() => say(t().left(S.fields.filter(x => !x.done).length)));
   if (/where am i|which (field|one)|what field|dónde estoy/.test(s) && f) return run(() => say(t().here(f.label)));
   return false;
@@ -779,7 +973,7 @@ function localAnswer(q) {
 function act(out) {
   switch (out.action) {
     case 'done': if (S.mode === 'write') return finishWriting(); break;
-    case 'skip': if (S.mode === 'guide' || S.mode === 'write') return skip(); break;
+    case 'skip': if (S.mode === 'find' || S.mode === 'guide' || S.mode === 'write') return skip(); break;
     case 'back': return back();
     case 'goto': if (out.field >= 0 && out.field < S.fields.length) return goTo(out.field); break;
     case 'repeat': return repeat();
@@ -789,7 +983,7 @@ function act(out) {
       setLang(out.lang);
       // Re-read the page so the field names come back in the new language. The parse prompt skips
       // blanks that are already filled in, so only what is left gets listed.
-      if (S.fields.length && ['idle', 'guide', 'write', 'done'].includes(S.mode)) return say(out.say).then(readForm);
+      if (S.fields.length && !S.fields.some(f => f.done) && ['idle', 'guide'].includes(S.mode)) return say(out.say).then(readForm);
       break;
   }
   return say(out.say);
@@ -933,6 +1127,7 @@ function loop(now) {
   if (S.sim && S.pointer) setTip(S.pointer.x, S.pointer.y, now);
   trackHands(now);
   if ((S.mode === 'guide' || S.mode === 'find') && !app.dataset.talk) guide(now); // guidance pauses while you talk
+  else if (S.mode === 'checkin' && !app.dataset.talk) checkinTick(now);
   else S.prox = 1;
   $('cue').style.setProperty('--close', S.mode === 'guide' || S.mode === 'find' ? (1 - S.prox).toFixed(2) : 0);
   tickWords(now);

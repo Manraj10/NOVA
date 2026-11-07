@@ -14,6 +14,7 @@ const WORDS = {
 const DONE = /^((i'?m )?(done|finished)|next|listo|terminé|siguiente|हो गया|अगला|好了|完成|下一个)$/;
 const REPEAT = /^(repeat( that)?|say (that|it) again|repite|otra vez|दोबारा|फिर से|再说一遍|重复)$/;
 const SKIP = /^(skip( it| this( one)?)?|saltar|छोड़ो|跳过)$/;
+const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो|重写)$/;
 // "Hey Nib", not bare "Nib": a presenter says "Nib reads the form..." all through the pitch.
 // Speech recognizers spell a made-up name many ways.
 const WAKE = /^(hey|hi|ok|okay)[\s,]+(nib|nibb|knib|nip|neb|nibs)\b/;
@@ -38,6 +39,14 @@ export const voice = {
   unlock() {
     this.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
     this.ctx.resume?.();
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari 16.4+ only */ }
+    if (!this.unlocked) {
+      // iOS only lets speech start from inside a tap: speak a silent line now, before any await.
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      speechSynthesis.speak(u);
+      this.unlocked = true;
+    }
   },
 
   pick() {
@@ -94,6 +103,7 @@ export const voice = {
   beep(freq = 660, dur = 0.05, vol = 0.1, pan = 0) {
     const c = this.ctx;
     if (!c || this.muted) return;
+    if (c.state !== 'running') { c.resume?.(); return; }
     const o = c.createOscillator(), g = c.createGain(), t = c.currentTime;
     o.type = 'sine';
     o.frequency.value = freq;
@@ -143,6 +153,7 @@ export const voice = {
       if (DONE.test(bare)) onCommand('done');
       else if (REPEAT.test(bare)) onCommand('repeat');
       else if (SKIP.test(bare)) onCommand('skip');
+      else if (REDO.test(bare)) onCommand('redo');
     };
     rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') this.rec = null; };
     rec.onend = () => { if (this.rec === rec) try { rec.start(); } catch { /* already running */ } };
@@ -159,6 +170,7 @@ export const voice = {
     resume?.abort?.();
     speechSynthesis.cancel();
     this.speaking = false;
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
@@ -182,6 +194,8 @@ export const voice = {
       stop: async () => {
         try { rec.stop(); } catch { /* already stopped */ }
         await Promise.race([done, new Promise(r => setTimeout(r, 1500))]);
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari only */ }
+        this.ctx?.resume?.(); // the mic can suspend audio on iOS
         if (this.onCommand) this.listen(this.onCommand);
         return `${final} ${interim}`.trim();
       },

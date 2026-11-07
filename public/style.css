@@ -15,6 +15,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--carbon-deep); color: var(--paper); }
+.stage, .caption, .buttons { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 body { font-family: var(--sans); -webkit-font-smoothing: antialiased; }
 button, select { font: inherit; color: inherit; }
 :focus-visible { outline: 3px solid var(--flag); outline-offset: 3px; }
