@@ -13,6 +13,7 @@ const ROUTES = {
 const live = document.getElementById('live');
 const listen = document.getElementById('listen');
 let ears = null, mic = null, starting = null, leaving = false, generation = 0;
+let wakeUntil = 0, wakeAt = 0, captureSequence = 0, wakeAfter = 0;
 const releaseMic = () => { mic?.getTracks().forEach(track => track.stop()); mic = null; };
 const state = (message, listening = false) => {
   live.textContent = message;
@@ -29,7 +30,7 @@ function go(destination) {
   if (!Object.hasOwn(ROUTES, destination)) return;
   if (destination === 'memory' && !memoryReady) { state(MEMORY_PENDING, !!ears?.stream); voice.say(MEMORY_PENDING); return; }
   const [href, line] = ROUTES[destination];
-  leaving = true; generation++;
+  leaving = true; generation++; wakeUntil = 0;
   ears?.stop(); releaseMic(); voice.micOpen = false;
   state(line);
   voice.unlock();
@@ -38,19 +39,33 @@ function go(destination) {
     .then(() => { location.href = href; });
 }
 
-function handle(text, echoContext) {
+function handle(text, echoContext, token) {
   if (leaving) return null;
-  if (voice.echo(text, echoContext)) return 'echo';
-  const destination = voice.navigation?.(text);
-  if (destination) { go(destination); return destination; }
-  // The shared wake parser knows every way "Nib" gets spelled ("Hey, Mib, help." happened live).
   const wake = voice.wake?.(text);
-  // "Nib" means "be quiet and listen": stop mid-sentence, chime, and wait for the choice.
-  if (wake && !wake.rest) { voice.stop(); voice.earcon?.(true); return 'wake'; }
-  const phrase = String(wake ? wake.rest : text || '').trim().toLowerCase().replace(/[,.!?。！？]+$/g, '').replace(/\s+/g, ' ');
-  if (/^(?:(?:hey|hi|okay|ok)[ ,]+nib[ ,]+)?(?:help|options|what can you do|what are my options|what can i say)$/.test(phrase)) {
-    voice.say(MENU); return 'menu';
+  const destination = voice.navigation?.(text);
+  const phrase = String(wake?.rest ?? text ?? '').trim().toLowerCase().replace(/[,.!?。！？]+$/g, '').replace(/\s+/g, ' ');
+  const help = /^(help|options|repeat|what can you do|what can i say|what are my options)$/.test(phrase);
+  const quiet = /^(stop|quiet|pause|stop speaking|be quiet)$/.test(phrase);
+  // Once a wake has been acknowledged, a fresh precise command must work
+  // through the short acoustic tail of the interrupted menu.
+  const followup = token?.owner === generation && token.sequence > wakeAfter
+    && token.capturedAt >= wakeAt && token.capturedAt < wakeUntil && (destination || help || quiet);
+  if (!followup && voice.echo(text, echoContext)) return 'echo';
+  if (quiet) {
+    wakeUntil = 0; voice.stop({ resumeEars: false });
+    state('Speech stopped. Still listening for Nib or a mode.', !!ears?.stream);
+    return 'quiet';
   }
+  if (wake && !wake.rest) {
+    voice.stop({ resumeEars: false });
+    wakeAt = performance.now(); wakeUntil = wakeAt + 8000;
+    wakeAfter = token?.sequence ?? captureSequence;
+    state('I’m listening. Say Paper, Around me, Memory, or help.', !!ears?.stream);
+    voice.earcon(true);
+    return 'listening';
+  }
+  if (destination) { wakeUntil = 0; go(destination); return destination; }
+  if (help || wake) { wakeUntil = 0; voice.say(MENU); return 'menu'; }
   return null;
 }
 
@@ -70,9 +85,9 @@ function start() {
   try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
   const candidate = makeEars({
     ctx: voice.ctx, lang: () => 'en', ignore: () => leaving,
-    onCapture: () => ({ owner, echo: voice.echoSnapshot() }),
+    onCapture: () => ({ owner, echo: voice.echoSnapshot(), sequence: ++captureSequence, capturedAt: performance.now() }),
     isCurrent: token => !leaving && token?.owner === generation,
-    onText: (text, token) => handle(text, token.echo),
+    onText: (text, token) => handle(text, token.echo, token),
   });
   let pending;
   pending = (async () => {
@@ -103,14 +118,14 @@ document.addEventListener('keydown', event => {
   else if (event.key === 'Enter' && !event.target.closest('a, button')) start();
 });
 addEventListener('pagehide', () => {
-  leaving = true; generation++;
+  leaving = true; generation++; wakeUntil = 0;
   ears?.stop(); releaseMic(); voice.micOpen = false;
   voice.stop({ resumeEars: false });
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari only */ }
 });
 addEventListener('pageshow', event => {
   if (!event.persisted) return;
-  leaving = false; generation++; ears = null; starting = null; releaseMic(); voice.micOpen = false;
+  leaving = false; generation++; wakeUntil = 0; ears = null; starting = null; releaseMic(); voice.micOpen = false;
   state('You are back on Nib Home. Tap Talk to Nib, choose a mode, or use keys 1, 2, or 3.');
 });
 window.nibHome = { handle };
