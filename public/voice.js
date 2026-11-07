@@ -333,8 +333,19 @@ export const voice = {
       // People say "go home", "open Paper", "take me to Memory", "Around me mode, please": still one whole command.
       .replace(/^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /, '')
       .replace(/( mode| page| screen)?( please)?$/, '');
-    const routes = { paper: 'paper', 'around me': 'around', around: 'around', memory: 'memory', home: 'home', back: 'home', menu: 'home' };
-    return Object.hasOwn(routes, destination) ? routes[destination] : null;
+    const routes = { paper: 'paper', 'around me': 'around', around: 'around', memory: 'memory', memories: 'memory', home: 'home', back: 'home', menu: 'home' };
+    if (Object.hasOwn(routes, destination)) return routes[destination];
+    // A one-word answer is often misheard ("Paper." came back as "peeper" on the live site): accept a
+    // near miss of a mode name, but only for short phrases and only when exactly one name is that close.
+    if (!destination || /[^a-z ]/.test(destination) || destination.split(' ').length > 3) return null; // plain words only
+    const lev = (a, b) => {
+      const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+      for (let j = 1; j <= b.length; j++) d[0][j] = j;
+      for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      return d[a.length][b.length];
+    };
+    const close = ['paper', 'memory', 'around me', 'home'].filter(k => lev(destination, k) <= (k.length >= 5 ? 2 : 1));
+    return close.length === 1 ? routes[close[0]] : null;
   },
 
   handle(text) {
