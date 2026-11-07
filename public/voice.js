@@ -15,11 +15,10 @@ const DONE = /^((i'?m )?(done|finished)|next|listo|terminé|siguiente|हो ग
 const REPEAT = /^(repeat( that)?|say (that|it) again|repite|otra vez|दोबारा|फिर से|再说一遍|重复)$/;
 const SKIP = /^(skip( it| this( one)?)?|saltar|छोड़ो|跳过)$/;
 const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो|重写)$/;
-// Wake: "Nib" on its own opens listening; "Hey Nib, <question>" asks straight away. A presenter
-// saying "Nib reads the form..." mid-sentence does nothing. Recognizers spell a made-up name many ways.
-// ("Hey, Mib, help." happened on the live site.)
-const WAKE = /^(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nibs|nibbs|knib|nip|neb|nim|mib|neeb|nibe|nieb|nibh|knob)\b/;
-const BARE = /^((hey|hi|hay|ok|okay) )?(nib|nibb|nibs|nibbs|knib|nip|neb|nim|mib|neeb|nibe|nieb|nibh|knob)$/;
+// Only a START address wakes Nib: "Nib", "Nib, <question>" and "Hey Nib, <question>".
+// Accept recognizer spellings and joined "HeyNib", never an embedded mention or "Nibbles".
+const WAKE = /^(?:(?:hey|hay)[\s,]*|(?:hi|ok|okay)[\s,]+)?(nib|nibb|nibs|nibbs|knib|nip|neb|nim|mib|neeb|nibe|nieb|nibh|knob)(?=$|[\s,.:!?;。！？])/;
+const BARE = /^(?:(?:hey|hay)[\s,]*|(?:hi|ok|okay)[\s,]+)?(nib|nibb|nibs|nibbs|knib|nip|neb|nim|mib|neeb|nibe|nieb|nibh|knob)$/;
 // Best built-in voices first: iPhone Premium/Enhanced downloads, then Edge/Chrome neural voices.
 const RANK = [/premium/i, /enhanced/i, /natural|neural/i, /online|google/i, /ava|zoe|samantha|aria|jenny|siri/i];
 const score = v => { const k = RANK.findIndex(r => r.test(v.name)); return k < 0 ? RANK.length : k; };
@@ -317,10 +316,8 @@ export const voice = {
 
   wake(text) {
     const said = String(text || '').trim(), low = said.toLowerCase();
-    const bare = low.replace(/[.,!?。！？"']/g, '').trim();
-    if (BARE.test(bare)) return { rest: '' };
     const match = WAKE.exec(low);
-    return match ? { rest: said.slice(match[0].length).replace(/^[\s,.!?]+/, '') } : null;
+    return match ? { rest: said.slice(match[0].length).replace(/^[\s,.:!?;。！？]+/, '').trim() } : null;
   },
 
   // Shared by Paper, Around and the home hub. Only a whole destination name,
@@ -328,7 +325,7 @@ export const voice = {
   navigation(text) {
     const low = String(text || '').trim().toLowerCase();
     const wake = WAKE.exec(low);
-    const destination = (wake ? low.slice(wake[0].length) : low)
+    const destination = (wake ? low.slice(wake[0].length).replace(/^[\s,.:!?;。！？]+/, '') : low)
       .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/,/g, '').replace(/\s+/g, ' ').trim()
       // People say "go home", "open Paper", "take me to Memory", "Around me mode, please": still one whole command.
       .replace(/^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /, '')
@@ -343,10 +340,10 @@ export const voice = {
     if (!onCommand || !said) return;
     const destination = this.navigation?.(said);
     if (destination) return onCommand('nav', destination);
-    const bare = low.replace(/[.,!?。！？"']/g, '').trim();
+    const bare = low.replace(/[.!?。！？]+$/g, '').trim();
     if (BARE.test(bare)) return onCommand('ask', '');
     const wake = WAKE.exec(low);
-    if (wake) return onCommand('ask', said.slice(wake[0].length).replace(/^[\s,.!?]+/, ''));
+    if (wake) return onCommand('ask', said.slice(wake[0].length).replace(/^[\s,.:!?;。！？]+/, '').trim());
     if (DONE.test(bare)) onCommand('done');
     else if (REPEAT.test(bare)) onCommand('repeat');
     else if (SKIP.test(bare)) onCommand('skip');
