@@ -296,6 +296,7 @@ export const voice = {
     // context at speech onset, including a copy before later lines replace it.
     return Object.freeze({
       active: this.speaking || performance.now() - this.endedAt <= 700,
+      talking: !!this.speaking, // still mid-line when this phrase began (not just in the tail after it)
       recent: Object.freeze([...(this.recent || [])]),
     });
   },
@@ -312,6 +313,10 @@ export const voice = {
     if (captured && BARE.test(bare)) return false;
     const n = s => String(s).toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
     const h = n(text);
+    // A one-word mode name right after Nib's menu ("Say Paper, …" → "Paper") is the person answering, not
+    // the speaker bleeding back, unless Nib was still mid-line. Other words in the tail (like "done")
+    // stay echo, because acting on them can't be undone.
+    if (captured && !h.includes(' ') && context.talking === false && this.navigation(h)) return false;
     return !!h && context.recent.some(line => n(line).includes(h));
   },
 
