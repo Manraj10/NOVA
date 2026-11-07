@@ -10,7 +10,7 @@ const fn = name => { const m = app.match(new RegExp(`(?:async )?function ${name}
 const methods = ['echoSnapshot', 'echo', 'wake', 'navigation', 'handle'].map(name => {
   const m = speech.match(new RegExp(`  ${name}\\([^\\n]*\\) \\{[\\s\\S]*?\\n  \\},`)); assert(m, name); return m[0];
 });
-const constants = speech.match(/^const (?:DONE|REPEAT|SKIP|REDO|WAKE|BARE) = .*;$/gm);
+const constants = speech.match(/^const (?:DONE|REPEAT|SKIP|REDO|NAME|HEY|WAKE|BARE) = .*;$/gm);
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function fixture(t, initial = {}) {
   const flags = { ...initial }, media = [], pending = [], starts = [], configs = [], actions = [], says = [], processors = [], hears = [];
