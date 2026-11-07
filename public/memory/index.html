@@ -12,6 +12,14 @@
 </head>
 <body>
 
+<section id="start" class="start">
+  <img class="icon" src="../icon.svg" alt="" width="72" height="72">
+  <h1>Memory</h1>
+  <p>Tell me about a room you remember. I’ll build it all the way around you, and tell you what’s where.</p>
+  <button id="go" class="cta" type="button">Tap anywhere to start</button>
+  <p class="fine">Then just talk. Say “Nib” any time to tell me something.</p>
+</section>
+
 <main id="home" class="screen on">
   <div class="home-pan" aria-hidden="true"></div>
   <header class="top glass">
@@ -23,7 +31,7 @@
     <h1>Step back into a room you remember.</h1>
     <p class="lede">Tell me about it in a few words. I’ll ask a question or two, then build it all the way around you, and tell you what’s where.</p>
     <button class="mic big" id="mic1" aria-label="Talk to Nib" aria-pressed="false"><span aria-hidden="true"></span></button>
-    <p class="note" id="note1">Tap the yellow button and talk, or say “Nib” any time.</p>
+    <p class="note" id="note1">Just start talking, or say “Nib” any time.</p>
     <form class="field glass" id="typeForm">
       <input id="memory" type="text" autocomplete="off" placeholder="Or type it: my grandmother’s kitchen, a winter evening…" aria-label="Or type your memory">
       <button class="go" id="build" aria-label="Continue" disabled>→</button>
@@ -47,7 +55,6 @@
       <button class="mic" id="mic2" aria-label="Talk to Nib" aria-pressed="false"><span aria-hidden="true"></span></button>
       <form class="field" id="answerForm"><input id="answer" type="text" autocomplete="off" placeholder="Or type here" aria-label="Type to Nib"></form>
     </div>
-    <button class="ghost small" id="skip" hidden>Skip this question</button>
   </section>
 </main>
 
