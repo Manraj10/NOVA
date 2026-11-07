@@ -322,10 +322,23 @@ export const voice = {
     return match ? { rest: said.slice(match[0].length).replace(/^[\s,.!?]+/, '') } : null;
   },
 
+  // Shared by Paper, Around and the home hub. Only a whole destination name,
+  // optionally introduced by the existing wake phrase, can change pages.
+  navigation(text) {
+    const low = String(text || '').trim().toLowerCase();
+    const wake = WAKE.exec(low);
+    const destination = (wake ? low.slice(wake[0].length) : low)
+      .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/\s+/g, ' ').trim();
+    const routes = { paper: 'paper', 'around me': 'around', memory: 'memory', home: 'home' };
+    return Object.hasOwn(routes, destination) ? routes[destination] : null;
+  },
+
   handle(text) {
     const onCommand = this.onCommand;
     const said = String(text || '').trim(), low = said.toLowerCase();
     if (!onCommand || !said) return;
+    const destination = this.navigation?.(said);
+    if (destination) return onCommand('nav', destination);
     const bare = low.replace(/[.,!?。！？"']/g, '').trim();
     if (BARE.test(bare)) return onCommand('ask', '');
     const wake = WAKE.exec(low);
