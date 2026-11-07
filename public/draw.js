@@ -1,20 +1,20 @@
-// Everything drawn over the camera view: the scan, the spotlight, sonar rings, the sign-here flag,
-// field outlines, the fingertip, and the finishing stamp.
+// Everything drawn over the camera view, in Apple's AR language: a rounded viewfinder, a Live Text
+// shimmer while the page is read, Live Text brackets on the blank in play, a callout naming it, a
+// Measure-style reticle and dotted line for the fingertip, check badges, and an Apple Pay-style check
+// at the finish.
 
 const C = {
-  carbon: '#1A1F4E',
-  deep: '#10132F',
-  flag: '#FFE14D',
-  paper: '#F7F6F2',
-  stamp: '#2FBF71',
-  stampInk: '#17784A',
-  marker: '#FF4FA3',
+  tint: '#FFD60A',
+  ink: '#1C1C1E',
+  white: '#FFFFFF',
+  green: '#30D158',
+  orange: '#FF9F0A',
 };
-const SANS = '"Atkinson Hyperlegible Next", system-ui, sans-serif';
-const MONO = '"Atkinson Hyperlegible Mono", ui-monospace, monospace';
+const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI Variable Text", "Segoe UI", sans-serif';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ease = t => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
-const back = t => { t = Math.min(1, Math.max(0, t)); const c = 1.7; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2; };
+// A spring-like overshoot, the feel of Apple's interactive springs.
+const back = t => { t = Math.min(1, Math.max(0, t)); const c = 1.4; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2; };
 // One overlay scale: 1 on a phone, about 1.3 on a laptop, about 1.65 on a 1080p projector.
 // Guidance maths uses frame fractions, so this only changes how big things are drawn.
 let u = 1;
@@ -29,13 +29,12 @@ export function anchorOf(f) {
   return { x: f.x0 + Math.min(0.01, (f.x1 - f.x0) * 0.08), y: (f.y0 + f.y1) / 2 };
 }
 
-function flagText(f) {
-  if (f.kind === 'signature') return 'SIGN HERE';
-  if (f.kind === 'checkbox') return 'CHECK HERE';
-  if (f.kind === 'button') return 'TAP HERE';
-  if (f.kind === 'find') return 'HERE';
-  const t = f.label.toUpperCase();
-  return t.length > 22 ? t.slice(0, 21) + '…' : t;
+function labelOf(f) {
+  if (f.kind === 'signature') return 'Sign here';
+  if (f.kind === 'checkbox') return 'Check here';
+  if (f.kind === 'button') return 'Tap here';
+  if (f.kind === 'find') return 'Here';
+  return f.label.length > 26 ? f.label.slice(0, 25) + '…' : f.label;
 }
 
 export function render(ctx, S, src, now) {
@@ -51,91 +50,99 @@ export function render(ctx, S, src, now) {
   const frame = { x: fit.ox, y: fit.oy, w: src.w * fit.s, h: src.h * fit.s };
   u = Math.min(2, Math.max(1, frame.h / 520));
 
+  // The viewfinder: the live picture in a rounded frame with a hairline edge.
+  const rad = 22 * u;
   ctx.save();
-  // The stamp lands with a short shake.
-  const sa = S.mode === 'done' ? now - S.finishedAt - 220 : -1;
-  if (!still && sa >= 0 && sa < 140) { const m = 8 * u * (1 - sa / 140); ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m); }
-
+  ctx.beginPath();
+  ctx.roundRect(frame.x, frame.y, frame.w, frame.h, rad);
+  ctx.clip();
   try { ctx.drawImage(src.img, frame.x, frame.y, frame.w, frame.h); } catch { /* video not ready */ }
+  ctx.restore();
 
   const seeking = S.mode === 'guide' || S.mode === 'find';
   const active = S.mode === 'find' ? S.find : ['guide', 'write', 'check', 'confirm'].includes(S.mode) ? S.fields[S.i] : null;
-  if (active) spotlight(ctx, S, R(active), frame, still, now);
+  if (active) spotlight(ctx, S, R(active), frame, rad, still, now);
   else S.hole = null;
 
-  // The scan: loops while the AI reads, then one clean pass that "finds" each field.
+  // Reading: a Live Text shimmer sweeps the page, with a status capsule and a live timer.
   if (S.mode === 'reading') {
-    const label = (S.reviewed ? 'FINAL CHECK' : 'READING THE PAGE') + (S.readT0 ? ` · ${((now - S.readT0) / 1000).toFixed(1)} s` : '');
-    scan(ctx, frame, still ? 0.5 : (now % 1700) / 1700, label);
+    shimmer(ctx, frame, rad, still ? 0.5 : ((now - (S.readT0 || 0)) % 1900) / 1900);
+    const label = (S.reviewed ? 'Final check' : 'Reading the page') + (S.readT0 ? ` · ${((now - S.readT0) / 1000).toFixed(1)} s` : '');
+    capsule(ctx, label, frame.x + 16 * u, frame.y + 16 * u, 'left', 1);
   }
   if (S.mode === 'reveal' && !still) {
     const p = (now - S.revealStart) / 1300;
-    if (p <= 1) scan(ctx, frame, p);
+    if (p <= 1) shimmer(ctx, frame, rad, p);
   }
 
-  // now (spotlit) / next (yellow badge) / later (light outline) / done (green stamp)
+  // Blanks: the one in play has brackets; the next is marked; done ones carry a check.
   const nextK = !active ? -1 : S.mode === 'find' ? S.i : S.fields.findIndex((f, k) => k > S.i && !f.done);
   S.fields.forEach((f, k) => {
     if (f.stale || (S.mode === 'reveal' && now < f.revealAt)) return;
     const r = R(f);
-    const pop = S.mode === 'reveal' && !still ? back((now - f.revealAt) / 380) : 1;
+    const pop = S.mode === 'reveal' && !still ? back((now - f.revealAt) / 420) : 1;
     ctx.save();
     if (pop < 1) {
       ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
-      ctx.scale(0.8 + 0.2 * pop, 0.8 + 0.2 * pop);
+      ctx.scale(0.85 + 0.15 * pop, 0.85 + 0.15 * pop);
+      ctx.globalAlpha = Math.min(1, pop * 1.4);
       ctx.translate(-(r.x + r.w / 2), -(r.y + r.h / 2));
     }
     if (f === active) highlighter(ctx, r, still ? 1 : ease((now - S.sweepAt) / 480));
     else if (f.done && !f.skipped) doneField(ctx, f, r, now, still);
-    else pending(ctx, r, k + 1, f.skipped, S.mode === 'reveal' ? Math.max(0, 1 - (now - f.revealAt) / 500) : 0, !!active, k === nextK);
+    else pending(ctx, r, k + 1, f.skipped, S.mode === 'reveal' ? Math.max(0, 1 - (now - f.revealAt) / 600) : 0, !!active, k === nextK);
     ctx.restore();
   });
 
-  // During the reveal, a counter ticks up with each place found.
   if (S.mode === 'reveal') {
     const n = S.fields.filter(f => now >= f.revealAt).length;
     if (n !== S.foundN) { S.foundN = n; S.foundAt = now; }
-    if (n > 0) chip(ctx, `${n} ${n === 1 ? 'PLACE' : 'PLACES'} FOUND`, frame.x + frame.w / 2, frame.y + 20 * u, still ? 1 : 1.25 - 0.25 * ease((now - S.foundAt) / 260));
+    if (n > 0) capsule(ctx, `${n} ${n === 1 ? 'place' : 'places'} found`, frame.x + frame.w / 2, frame.y + 16 * u, 'center', still ? 1 : 1.12 - 0.12 * ease((now - S.foundAt) / 300));
   } else S.foundN = 0;
 
   if (S.mode === 'find' && active) { ctx.save(); highlighter(ctx, R(active), still ? 1 : ease((now - S.sweepAt) / 480)); ctx.restore(); }
 
   const A = active ? P(anchorOf(active).x, anchorOf(active).y) : null;
-  const b = (now - S.burstAt) / 650;
+  const b = (now - S.burstAt) / 700;
   if (active) {
     const [ax, ay] = A;
     if (seeking) {
       sonar(ctx, S, ax, ay, now, still);
       if (S.tip && now - S.tipSeen < 500) guideLine(ctx, P(S.tip.x, S.tip.y), A, now, still);
     }
-    // The flag swells from its point at the same moment as the chime and "Stop".
-    const pop = !still && S.mode === 'write' && b >= 0 && b < 1 ? 0.22 * Math.sin(Math.min(1, b / 0.5) * Math.PI) * (1 - b) : 0;
-    flag(ctx, S, flagText(active), ax, ay, still, pop);
+    const pop = !still && S.mode === 'write' && b >= 0 && b < 1 ? 0.16 * Math.sin(Math.min(1, b / 0.45) * Math.PI) * (1 - b) : 0;
+    callout(ctx, S, labelOf(active), ax, ay, R(active), still, pop);
   }
-  // Plant the flag: two rings burst out from where the finger landed (the found spot after a "where is").
+  // Arrival: two soft rings bloom from the spot the finger reached.
   if (S.burstPt && b >= 0 && b < 1 && !still) {
     const [bx, by] = P(S.burstPt.x, S.burstPt.y);
-    ring(ctx, bx, by, (18 + ease(b) * 72) * u, 7 * u * (1 - b), C.flag, 1 - b);
-    const b2 = b - 90 / 650;
-    if (b2 > 0) ring(ctx, bx, by, (18 + ease(b2) * 132) * u, 5 * u * (1 - b2), C.flag, 0.8 * (1 - b2));
+    ring(ctx, bx, by, (18 + ease(b) * 70) * u, 5 * u * (1 - b), C.tint, 1 - b);
+    const b2 = b - 0.14;
+    if (b2 > 0) ring(ctx, bx, by, (18 + ease(b2) * 120) * u, 3 * u * (1 - b2), C.white, 0.7 * (1 - b2));
   }
 
   if (!S.sim && S.handPts?.length && now - (S.handAt || 0) < 300) S.handPts.forEach((h, i) => skeleton(ctx, h, P, i === S.pointerIdx));
-  if (S.tip && now - S.tipSeen < 500 && S.mode !== 'done' && S.mode !== 'check') fingertip(ctx, S, P, now, still, A);
+  if (S.tip && now - S.tipSeen < 500 && S.mode !== 'done' && S.mode !== 'check') reticle(ctx, S, P, now, still);
 
-  if (S.mode === 'done' && S.fields.length) finishStamp(ctx, S, frame, now, still);
-  ctx.restore();
+  if (S.mode === 'done' && S.fields.length) finishCard(ctx, S, frame, rad, now, still);
+
+  // The viewfinder's hairline edge goes on last so nothing paints over it.
+  ctx.beginPath();
+  ctx.roundRect(frame.x + 0.5, frame.y + 0.5, frame.w - 1, frame.h - 1, rad);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255,255,255,.16)';
+  ctx.stroke();
 }
 
-// A ring with a dark under-stroke, so it reads on white paper and on a dark table.
+// A ring with a soft dark under-stroke, so it reads on white paper and on a dark desk.
 function ring(ctx, x, y, r, w, color, a) {
   if (w <= 0 || a <= 0) return;
   ctx.save();
   ctx.globalAlpha = Math.min(1, a);
   ctx.beginPath();
   ctx.arc(x, y, Math.max(r, 0.1), 0, Math.PI * 2);
-  ctx.lineWidth = w + 4 * u;
-  ctx.strokeStyle = 'rgba(8,10,30,.55)';
+  ctx.lineWidth = w + 3 * u;
+  ctx.strokeStyle = 'rgba(0,0,0,.28)';
   ctx.stroke();
   ctx.lineWidth = w;
   ctx.strokeStyle = color;
@@ -143,35 +150,40 @@ function ring(ctx, x, y, r, w, color, a) {
   ctx.restore();
 }
 
-// A centred pill label, scaled about its own centre.
-function chip(ctx, text, cx, top, scale) {
+// A glass status capsule: dark translucent fill, white text, soft shadow.
+function capsule(ctx, text, x, top, align, scale) {
   ctx.save();
-  ctx.font = `800 ${26 * u}px ${SANS}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.06em';
-  const w = ctx.measureText(text).width + 36 * u, h = 26 * u + 20 * u;
-  ctx.translate(cx, top + h / 2);
+  ctx.font = `600 ${15 * u}px ${FONT}`;
+  const w = ctx.measureText(text).width + 32 * u, h = 36 * u;
+  const left = align === 'center' ? x - w / 2 : x;
+  ctx.translate(left + w / 2, top + h / 2);
   ctx.scale(scale, scale);
-  ctx.shadowColor = 'rgba(8,10,30,.45)';
+  ctx.shadowColor = 'rgba(0,0,0,.35)';
   ctx.shadowBlur = 18 * u;
-  ctx.fillStyle = C.flag;
+  ctx.shadowOffsetY = 6 * u;
+  ctx.fillStyle = 'rgba(28,28,30,.82)';
   ctx.beginPath();
   ctx.roundRect(-w / 2, -h / 2, w, h, h / 2);
   ctx.fill();
   ctx.shadowColor = 'transparent';
-  ctx.fillStyle = C.carbon;
+  ctx.lineWidth = 0.75;
+  ctx.strokeStyle = 'rgba(255,255,255,.18)';
+  ctx.stroke();
+  ctx.fillStyle = C.white;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, 0, 1);
   ctx.restore();
 }
 
-// The live hand: 21 tracked points, drawn faintly so the room can see it's really following the hand.
+// The live hand: drawn faintly so the room can see it's really following the hand.
 const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
-// The hand Nib follows is drawn in flag yellow; any other hand (the pen hand) stays faint.
+// The hand Nib follows is drawn in the tint; any other hand (the pen hand) stays faint.
 function skeleton(ctx, pts, P, pointer) {
   ctx.save();
-  ctx.strokeStyle = pointer ? 'rgba(255,225,77,.85)' : 'rgba(247,246,242,.3)';
+  ctx.strokeStyle = pointer ? 'rgba(255,214,10,.75)' : 'rgba(255,255,255,.28)';
   ctx.lineWidth = 2 * u;
+  ctx.lineCap = 'round';
   ctx.beginPath();
   for (const [a, b] of BONES) {
     const [x0, y0] = P(pts[a].x, pts[a].y), [x1, y1] = P(pts[b].x, pts[b].y);
@@ -179,361 +191,334 @@ function skeleton(ctx, pts, P, pointer) {
     ctx.lineTo(x1, y1);
   }
   ctx.stroke();
-  ctx.fillStyle = pointer ? 'rgba(255,225,77,.95)' : 'rgba(247,246,242,.45)';
+  ctx.fillStyle = pointer ? 'rgba(255,214,10,.95)' : 'rgba(255,255,255,.45)';
   for (const p of pts) { const [x, y] = P(p.x, p.y); ctx.beginPath(); ctx.arc(x, y, 2.5 * u, 0, Math.PI * 2); ctx.fill(); }
   ctx.restore();
 }
 
-function scan(ctx, frame, p, label) {
-  const y = frame.y + p * frame.h;
+// Live Text shimmer: a soft diagonal band of light sweeping across the page.
+function shimmer(ctx, frame, rad, p) {
+  const span = frame.w + frame.h, x = frame.x - frame.h + p * span;
   ctx.save();
-  const g = ctx.createLinearGradient(0, y - 160 * u, 0, y);
-  g.addColorStop(0, 'rgba(255,225,77,0)');
-  g.addColorStop(1, 'rgba(255,225,77,.55)');
-  ctx.fillStyle = g;
-  ctx.fillRect(frame.x, y - 160 * u, frame.w, 160 * u);
-  ctx.shadowColor = C.flag;
-  ctx.shadowBlur = 24 * u;
-  ctx.fillStyle = C.flag;
-  ctx.fillRect(frame.x, y - 2.5 * u, frame.w, 5 * u);
-  ctx.restore();
-  if (!label) return;
-  ctx.save();
-  ctx.font = `700 ${14 * u}px ${MONO}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.1em';
-  const cw = ctx.measureText(label).width + 24 * u, x = frame.x + 16 * u, top = Math.max(frame.y + 6 * u, y - 38 * u);
-  ctx.fillStyle = C.flag;
   ctx.beginPath();
-  ctx.roundRect(x, top, cw, 28 * u, 14 * u);
-  ctx.fill();
-  ctx.fillStyle = C.carbon;
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + 12 * u, top + 14 * u + 1);
+  ctx.roundRect(frame.x, frame.y, frame.w, frame.h, rad);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,.18)';
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+  const g = ctx.createLinearGradient(x, frame.y, x + frame.h * 0.9, frame.y + frame.h);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.45, 'rgba(255,255,255,.0)');
+  g.addColorStop(0.5, 'rgba(255,255,255,.5)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g;
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
   ctx.restore();
 }
 
-// Dim everything except the field in play. The hole glides from field to field; four corner brackets
-// frame it like a viewfinder and breathe slowly.
-function spotlight(ctx, S, r, frame, still, now) {
-  const pad = 20 * u;
+// Dim everything but the field in play; Live Text corner brackets frame it and breathe slowly.
+function spotlight(ctx, S, r, frame, rad, still, now) {
+  const pad = 14 * u;
   const target = { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2 };
   if (!S.hole || still) S.hole = { ...target, a: still ? 1 : 0 };
-  else for (const k of ['x', 'y', 'w', 'h']) S.hole[k] += (target[k] - S.hole[k]) * 0.16;
-  S.hole.a = Math.min(1, S.hole.a + 0.06);
+  else for (const k of ['x', 'y', 'w', 'h']) S.hole[k] += (target[k] - S.hole[k]) * 0.2;
+  S.hole.a = Math.min(1, S.hole.a + 0.07);
   const h = S.hole;
   ctx.save();
-  ctx.fillStyle = `rgba(8,10,30,${0.62 * h.a})`;
+  ctx.beginPath();
+  ctx.roundRect(frame.x, frame.y, frame.w, frame.h, rad);
+  ctx.clip();
+  ctx.fillStyle = `rgba(0,0,0,${0.5 * h.a})`;
   ctx.beginPath();
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
-  ctx.roundRect(h.x, h.y, h.w, h.h, 16 * u);
+  ctx.roundRect(h.x, h.y, h.w, h.h, 12 * u);
   ctx.fill('evenodd');
-  ctx.strokeStyle = `rgba(255,225,77,${0.35 * h.a})`;
-  ctx.lineWidth = u;
-  ctx.beginPath();
-  ctx.roundRect(h.x, h.y, h.w, h.h, 16 * u);
-  ctx.stroke();
-  const L = Math.min(28 * u, h.w / 3, h.h / 2), x0 = h.x, y0 = h.y, x1 = h.x + h.w, y1 = h.y + h.h;
+  ctx.restore();
+  // Brackets: four rounded corners, the shape Live Text and the code scanner use.
+  const breathe = still ? 0 : Math.sin(now / 500) * 1.5 * u;
+  const x0 = h.x - breathe, y0 = h.y - breathe, x1 = h.x + h.w + breathe, y1 = h.y + h.h + breathe;
+  const L = Math.min(26 * u, h.w / 3, h.h / 2), c = Math.min(10 * u, L - 2);
+  ctx.save();
   ctx.lineWidth = 4 * u;
   ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = `rgba(255,225,77,${h.a})`;
-  ctx.shadowColor = C.flag;
-  ctx.shadowBlur = 14 * u * (still ? 1 : 0.75 + 0.25 * Math.sin(now / 420));
+  ctx.strokeStyle = `rgba(255,214,10,${h.a})`;
+  ctx.shadowColor = 'rgba(0,0,0,.35)';
+  ctx.shadowBlur = 8 * u;
   ctx.beginPath();
-  ctx.moveTo(x0, y0 + L); ctx.lineTo(x0, y0); ctx.lineTo(x0 + L, y0);
-  ctx.moveTo(x1 - L, y0); ctx.lineTo(x1, y0); ctx.lineTo(x1, y0 + L);
-  ctx.moveTo(x1, y1 - L); ctx.lineTo(x1, y1); ctx.lineTo(x1 - L, y1);
-  ctx.moveTo(x0 + L, y1); ctx.lineTo(x0, y1); ctx.lineTo(x0, y1 - L);
+  ctx.moveTo(x0, y0 + L); ctx.arcTo(x0, y0, x0 + L, y0, c); ctx.lineTo(x0 + L, y0);
+  ctx.moveTo(x1 - L, y0); ctx.arcTo(x1, y0, x1, y0 + L, c); ctx.lineTo(x1, y0 + L);
+  ctx.moveTo(x1, y1 - L); ctx.arcTo(x1, y1, x1 - L, y1, c); ctx.lineTo(x1 - L, y1);
+  ctx.moveTo(x0 + L, y1); ctx.arcTo(x0, y1, x0, y1 - L, c); ctx.lineTo(x0, y1 - L);
   ctx.stroke();
   ctx.restore();
 }
 
 function highlighter(ctx, r, t) {
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = 'rgba(255,225,77,.92)';
+  ctx.fillStyle = 'rgba(255,214,10,.62)';
   ctx.beginPath();
-  ctx.roundRect(r.x - 6 * u, r.y - 4 * u, (r.w + 12 * u) * t, r.h + 8 * u, 5 * u);
+  ctx.roundRect(r.x - 6 * u, r.y - 4 * u, (r.w + 12 * u) * t, r.h + 8 * u, 7 * u);
   ctx.fill();
 }
 
-// Carbon dashes vanish on a dimmed page, so while a spotlight is on the outlines switch to light ink.
+// Places still to fill: a soft rounded outline (light on the dimmed page, dark on bright paper)
+// and a numbered badge. The next one gets a yellow badge.
 function pending(ctx, r, n, skipped, flash, dim, next) {
-  const box = () => { ctx.beginPath(); ctx.roundRect(r.x - 4 * u, r.y - 3 * u, r.w + 8 * u, r.h + 6 * u, 5 * u); };
+  const box = () => { ctx.beginPath(); ctx.roundRect(r.x - 5 * u, r.y - 4 * u, r.w + 10 * u, r.h + 8 * u, 7 * u); };
   if (flash > 0) {
-    ctx.fillStyle = `rgba(255,225,77,${flash * 0.7})`;
+    ctx.fillStyle = `rgba(255,214,10,${flash * 0.5})`;
     box();
     ctx.fill();
   }
-  ctx.setLineDash([6 * u, 5 * u]);
-  ctx.lineWidth = (next ? 3 : 2) * u;
-  ctx.strokeStyle = dim ? `rgba(247,246,242,${skipped ? 0.3 : next ? 0.95 : 0.6})` : skipped ? 'rgba(26,31,78,.25)' : 'rgba(26,31,78,.62)';
+  ctx.lineWidth = (next ? 2 : 1.25) * u;
+  ctx.strokeStyle = dim ? `rgba(255,255,255,${skipped ? 0.25 : next ? 0.9 : 0.5})` : skipped ? 'rgba(0,0,0,.18)' : 'rgba(0,0,0,.38)';
   box();
   ctx.stroke();
-  ctx.setLineDash([]);
-  const rad = (next ? 12 : 10) * u, x = r.x - 17 * u, y = r.y + r.h / 2;
-  ctx.fillStyle = next ? C.flag : skipped && !dim ? 'rgba(26,31,78,.3)' : C.carbon;
+  const rad = (next ? 11 : 9.5) * u, x = r.x - 18 * u, y = r.y + r.h / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.3)';
+  ctx.shadowBlur = 6 * u;
+  ctx.fillStyle = next ? C.tint : skipped ? 'rgba(60,60,67,.6)' : 'rgba(28,28,30,.9)';
   ctx.beginPath();
   ctx.arc(x, y, rad, 0, Math.PI * 2);
   ctx.fill();
-  if (dim && !next) {
-    ctx.lineWidth = 2 * u;
-    ctx.strokeStyle = 'rgba(247,246,242,.6)';
-    ctx.stroke();
-  }
-  ctx.fillStyle = next ? C.carbon : C.paper;
-  ctx.font = `700 ${(next ? 13 : 11) * u}px ${MONO}`;
+  ctx.restore();
+  ctx.fillStyle = next ? C.ink : C.white;
+  ctx.font = `600 ${(next ? 12.5 : 11) * u}px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(n), x, y + 0.5);
 }
 
+// Done: a faint green wash and a checkmark.circle.fill badge with a white rim.
 function doneField(ctx, f, r, now, still) {
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = 'rgba(47,191,113,.32)';
+  ctx.fillStyle = 'rgba(48,209,88,.24)';
   ctx.beginPath();
-  ctx.roundRect(r.x - 6 * u, r.y - 4 * u, r.w + 12 * u, r.h + 8 * u, 5 * u);
+  ctx.roundRect(r.x - 6 * u, r.y - 4 * u, r.w + 12 * u, r.h + 8 * u, 7 * u);
   ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
   const age = now - (f.doneAt || 0);
-  const t = still ? 1 : back(age / 360);
-  const cx = r.x + r.w + 18 * u, cy = r.y + r.h / 2, rad = 12 * u * t;
-  if (rad < 0.5) return; // not stamped yet (the finish ripple re-pops checks top to bottom)
+  const t = still ? 1 : back(age / 380);
+  const cx = r.x + r.w + 18 * u, cy = r.y + r.h / 2, rad = 11 * u * t;
+  if (rad < 0.5) return; // not yet: the finish re-pops checks top to bottom
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(-0.12);
-  ctx.fillStyle = C.stamp;
+  ctx.shadowColor = 'rgba(0,0,0,.3)';
+  ctx.shadowBlur = 6 * u;
+  ctx.fillStyle = C.white;
+  ctx.beginPath();
+  ctx.arc(0, 0, rad + 2 * u, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = C.green;
   ctx.beginPath();
   ctx.arc(0, 0, rad, 0, Math.PI * 2);
   ctx.fill();
-  ctx.lineWidth = 2 * u;
-  ctx.strokeStyle = 'rgba(16,19,47,.9)';
-  ctx.stroke();
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3 * u;
+  ctx.strokeStyle = C.white;
+  ctx.lineWidth = 2.6 * u;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(-rad * 0.42, 0);
-  ctx.lineTo(-rad * 0.1, rad * 0.32);
-  ctx.lineTo(rad * 0.45, -rad * 0.34);
+  ctx.moveTo(-rad * 0.42, rad * 0.02);
+  ctx.lineTo(-rad * 0.1, rad * 0.34);
+  ctx.lineTo(rad * 0.45, -rad * 0.32);
   ctx.stroke();
   ctx.restore();
 }
 
-// Sonar: steady rings mark the target, and each beep sends a ring out, so the room can see the sound.
+// Sonar: faint steady rings at the target, and each beep sends a ring out, so the room sees the sound.
 function sonar(ctx, S, ax, ay, now, still) {
-  for (let k = 1; k <= 3; k++) ring(ctx, ax, ay, k * 30 * u, 2 * u, C.flag, 0.55 - k * 0.13);
+  for (let k = 1; k <= 2; k++) ring(ctx, ax, ay, k * 34 * u, 1.5 * u, C.white, 0.42 - k * 0.12);
   if (still) return;
   S.pulses = S.pulses.filter(p => now - p.t < 750);
   for (const p of S.pulses) {
     const q = (now - p.t) / 750;
-    if (p.on) ring(ctx, ax, ay, (14 + ease(q) * 60) * u, 6 * u, C.flag, 1 - q);
-    else ring(ctx, ax, ay, (14 + ease(q) * 130) * u, 3 * u, '#fff', 0.85 * (1 - q));
+    ring(ctx, ax, ay, (14 + ease(q) * (p.on ? 60 : 120)) * u, (p.on ? 4 : 2.5) * u, p.on ? C.tint : C.white, (p.on ? 1 : 0.8) * (1 - q));
   }
 }
 
-// A dotted line from the fingertip that ends in an arrowhead just short of the flag.
+// The Measure-app dotted line from the fingertip to the blank.
 function guideLine(ctx, [tx, ty], [ax, ay], now, still) {
-  const ang = Math.atan2(ay - ty, ax - tx), L = Math.hypot(ax - tx, ay - ty);
-  if (L < 60 * u) return;
-  const hx = ax - Math.cos(ang) * 24 * u, hy = ay - Math.sin(ang) * 24 * u;
+  const L = Math.hypot(ax - tx, ay - ty);
+  if (L < 50 * u) return;
+  const k = 1 - (22 * u) / L, ex = tx + (ax - tx) * k, ey = ty + (ay - ty) * k;
   ctx.save();
   ctx.lineCap = 'round';
-  ctx.setLineDash([0.1, 11 * u]);
-  ctx.lineDashOffset = still ? 0 : -(now / 40) % (11 * u);
-  for (const [w, c] of [[8 * u, 'rgba(8,10,30,.55)'], [4 * u, C.marker]]) {
+  ctx.setLineDash([0.1, 10 * u]);
+  ctx.lineDashOffset = still ? 0 : -(now / 45) % (10 * u);
+  for (const [w, c] of [[7 * u, 'rgba(0,0,0,.3)'], [4 * u, C.white]]) {
     ctx.lineWidth = w;
     ctx.strokeStyle = c;
     ctx.beginPath();
     ctx.moveTo(tx, ty);
-    ctx.lineTo(hx, hy);
+    ctx.lineTo(ex, ey);
     ctx.stroke();
   }
-  ctx.setLineDash([]);
-  ctx.translate(hx, hy);
-  ctx.rotate(ang);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-14 * u, -6 * u);
-  ctx.lineTo(-14 * u, 6 * u);
-  ctx.closePath();
-  ctx.fillStyle = C.marker;
-  ctx.lineWidth = 2 * u;
-  ctx.strokeStyle = C.deep;
-  ctx.fill();
-  ctx.stroke();
   ctx.restore();
 }
 
-// The fingertip: pink when far, warming to flag yellow as it closes in. A dashed ring centred on the
-// target passes through the finger and tightens as it closes in; on arrival a dial fills for the dwell.
-function fingertip(ctx, S, P, now, still, A) {
+// The fingertip as a Measure-style reticle: a white ring and dot; on target it turns yellow and the
+// ring fills for the dwell (progress, so it stays on even with reduced motion).
+function reticle(ctx, S, P, now, still) {
   const [tx, ty] = P(S.tip.x, S.tip.y);
   const seeking = S.mode === 'guide' || S.mode === 'find';
-  const c = seeking ? 1 - Math.min(1, S.prox ?? 1) : 0;
-  const col = `rgb(255,${Math.round(79 + 146 * c)},${Math.round(163 - 86 * c)})`;
   const on = S.onTarget && seeking;
   ctx.save();
   S.trail.forEach((p, i) => {
     const [px, py] = P(p.x, p.y);
-    ctx.globalAlpha = (i / S.trail.length) * 0.4;
-    ctx.fillStyle = col;
+    ctx.globalAlpha = (i / S.trail.length) * 0.35;
+    ctx.fillStyle = C.white;
     ctx.beginPath();
-    ctx.arc(px, py, (3 + (i / S.trail.length) * 3) * u, 0, Math.PI * 2);
+    ctx.arc(px, py, (1.5 + (i / S.trail.length) * 2.5) * u, 0, Math.PI * 2);
     ctx.fill();
   });
   ctx.globalAlpha = 1;
-  if (seeking && A && !on) {
-    const d = Math.hypot(tx - A[0], ty - A[1]);
-    ctx.save();
-    ctx.setLineDash([8 * u, 8 * u]);
-    ctx.lineDashOffset = still ? 0 : -now / 30;
-    ctx.lineWidth = 3 * u;
-    ctx.strokeStyle = col;
-    ctx.globalAlpha = 0.55;
-    ctx.beginPath();
-    ctx.arc(A[0], A[1], Math.min(260 * u, Math.max(30 * u, d)), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.shadowColor = 'rgba(16,19,47,.5)';
-  ctx.shadowBlur = 12 * u;
-  ctx.lineWidth = 4 * u;
-  ctx.strokeStyle = on ? C.carbon : col;
-  ctx.fillStyle = on ? 'rgba(255,225,77,.6)' : 'rgba(255,255,255,.18)';
+  const r = (on && !still ? 20 + Math.sin(now / 90) * 1.5 : 20) * u;
+  ctx.shadowColor = 'rgba(0,0,0,.45)';
+  ctx.shadowBlur = 10 * u;
+  ctx.fillStyle = on ? 'rgba(255,214,10,.22)' : 'rgba(255,255,255,.12)';
   ctx.beginPath();
-  ctx.arc(tx, ty, (on && !still ? 19 + Math.sin(now / 80) * 2.5 : 19) * u, 0, Math.PI * 2);
+  ctx.arc(tx, ty, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.lineWidth = 3 * u;
+  ctx.strokeStyle = on ? C.tint : C.white;
   ctx.stroke();
   ctx.shadowBlur = 0;
-  // The dwell dial shows progress, so it stays on even with reduced motion.
   if (on && S.arrivedSince) {
     const p = Math.min(1, (now - S.arrivedSince) / 450);
-    ctx.lineWidth = 6 * u;
-    ctx.strokeStyle = C.flag;
+    ctx.lineWidth = 5 * u;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,.35)';
     ctx.beginPath();
-    ctx.arc(tx, ty, 27 * u, 0, Math.PI * 2);
+    ctx.arc(tx, ty, r + 7 * u, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.strokeStyle = C.carbon;
+    ctx.strokeStyle = C.tint;
     ctx.beginPath();
-    ctx.arc(tx, ty, 27 * u, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+    ctx.arc(tx, ty, r + 7 * u, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
     ctx.stroke();
   }
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = on ? C.tint : C.white;
   ctx.beginPath();
-  ctx.arc(tx, ty, 5 * u, 0, Math.PI * 2);
+  ctx.arc(tx, ty, 4 * u, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
-// The signature element: a sign-here tab that glides to the next place to write.
-function flag(ctx, S, text, ax, ay, still, pop = 0) {
+// The callout: a white capsule naming the place, with a pointer to it. It sits above the blank when
+// there's room, else below, and stays on the canvas.
+function callout(ctx, S, text, ax, ay, r, still, pop = 0) {
   ctx.save();
-  ctx.font = `800 ${16 * u}px ${SANS}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.06em';
+  ctx.font = `600 ${17 * u}px ${FONT}`;
   const tw = ctx.measureText(text).width;
-  const h = 36 * u, tip = 16 * u, bodyW = tw + 28 * u, r = 6 * u;
-  const roomLeft = ax - (bodyW + tip + 8 * u) > 4;
+  const h = 40 * u, w = tw + 36 * u, tip = 9 * u, gap = 16 * u;
   const cw = ctx.canvas.clientWidth, ch = ctx.canvas.clientHeight;
-  const clampX = v => Math.max(4, Math.min(cw - bodyW - 4, v)), clampY = v => Math.max(4, Math.min(ch - h - 6, v));
-  const target = roomLeft ? { x: Math.max(4, ax - tip - 8 * u - bodyW), y: clampY(ay - h / 2), dir: 'right' } : { x: clampX(ax - bodyW / 2), y: clampY(ay + 24 * u + tip), dir: 'up' };
-  if (!S.flag || still || S.flag.dir !== target.dir) S.flag = { ...target };
-  else { S.flag.x += (target.x - S.flag.x) * 0.2; S.flag.y += (target.y - S.flag.y) * 0.2; }
-  const { x, y, dir } = S.flag;
-  const ux = Math.max(tip + r, Math.min(bodyW - tip - r, ax - x)); // the up-arrow still points at the blank after clamping
+  const above = r.y - gap - h - tip > 6;
+  const tx = Math.max(6, Math.min(cw - w - 6, ax - 22 * u));
+  const target = { x: tx, y: above ? r.y - gap - h - tip : Math.min(ch - h - 6, r.y + r.h + gap + tip), above };
+  if (!S.flag || still || S.flag.above !== target.above) S.flag = { ...target };
+  else { S.flag.x += (target.x - S.flag.x) * 0.22; S.flag.y += (target.y - S.flag.y) * 0.22; }
+  const { x, y, above: up } = S.flag;
+  const px = Math.max(x + h / 2, Math.min(x + w - h / 2, ax)); // the pointer still aims at the blank after clamping
   if (pop) {
-    const [px, py] = dir === 'right' ? [x + bodyW + tip, y + h / 2] : [x + ux, y - tip];
-    ctx.translate(px, py);
+    const oy = up ? y + h + tip : y - tip;
+    ctx.translate(px, oy);
     ctx.scale(1 + pop, 1 + pop);
-    ctx.translate(-px, -py);
+    ctx.translate(-px, -oy);
   }
-  ctx.shadowColor = 'rgba(8,10,30,.45)';
-  ctx.shadowBlur = 16 * u;
-  ctx.shadowOffsetY = 5 * u;
-  ctx.fillStyle = C.flag;
+  ctx.shadowColor = 'rgba(0,0,0,.35)';
+  ctx.shadowBlur = 20 * u;
+  ctx.shadowOffsetY = 6 * u;
+  ctx.fillStyle = C.white;
   ctx.beginPath();
-  if (dir === 'right') {
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + bodyW, y);
-    ctx.lineTo(x + bodyW + tip, y + h / 2);
-    ctx.lineTo(x + bodyW, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-  } else {
-    ctx.moveTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.lineTo(x + ux - tip * 0.7, y);
-    ctx.lineTo(x + ux, y - tip);
-    ctx.lineTo(x + ux + tip * 0.7, y);
-    ctx.lineTo(x + bodyW - r, y);
-    ctx.quadraticCurveTo(x + bodyW, y, x + bodyW, y + r);
-    ctx.lineTo(x + bodyW, y + h - r);
-    ctx.quadraticCurveTo(x + bodyW, y + h, x + bodyW - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  }
-  ctx.closePath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.moveTo(px - tip, up ? y + h - 1 : y + 1);
+  ctx.lineTo(px, up ? y + h + tip : y - tip);
+  ctx.lineTo(px + tip, up ? y + h - 1 : y + 1);
   ctx.fill();
   ctx.shadowColor = 'transparent';
-  ctx.fillStyle = C.carbon;
+  ctx.fillStyle = C.ink;
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, x + 14 * u, y + h / 2 + 1);
+  ctx.fillText(text, x + 18 * u, y + h / 2 + 1);
   ctx.restore();
 }
 
-// The finish: a paper stamp slams onto the page. It only says COMPLETED INDEPENDENTLY when that is true:
-// nothing skipped, nothing unclear, and the final check actually ran.
-function finishStamp(ctx, S, frame, now, still) {
-  const age = now - S.finishedAt;
+// The finish, Apple Pay style: a glass card where the circle draws, then the check. It says
+// "Completed independently" only when nothing was skipped, unclear or unchecked.
+function finishCard(ctx, S, frame, rad, now, still) {
+  const age = still ? 5000 : now - S.finishedAt;
   const filled = S.fields.filter(f => f.done && !f.skipped).length;
   const open = S.fields.filter(f => f.skipped || f.review || !f.done).length;
   const clean = !open && !S.reviewFailed;
-  const ink = clean ? C.stampInk : C.carbon;
+  const col = clean ? C.green : C.orange;
   ctx.save();
-  ctx.fillStyle = `rgba(8,10,30,${0.5 * (still ? 1 : ease(age / 300))})`;
-  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
-  const w = Math.min(frame.w * 0.8, 560 * u), h = w * 0.42, cx = frame.x + frame.w / 2, cy = frame.y + frame.h / 2;
-  const t = age / 380, scale = still || t >= 1 ? 1 : 2.4 - 1.4 * back(t);
-  const outline = () => { ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.03); };
-  ctx.translate(cx, cy);
-  ctx.rotate(-0.1);
-  // An ink ring spreads out from the stamp as it lands.
-  const k = (age - 200) / 600;
-  if (!still && k > 0 && k < 1) {
-    ctx.save();
-    ctx.scale(1 + 0.4 * ease(k), 1 + 0.4 * ease(k));
-    ctx.globalAlpha = 0.5 * (1 - k);
-    ctx.lineWidth = 6 * u * (1 - k);
-    ctx.strokeStyle = ink;
-    outline();
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.scale(scale, scale);
-  ctx.globalAlpha = still ? 1 : Math.min(1, age / 120);
-  ctx.fillStyle = 'rgba(247,246,242,.96)';
-  outline();
-  ctx.fill();
-  ctx.lineWidth = w * 0.014;
-  ctx.strokeStyle = ink;
-  ctx.stroke();
-  ctx.lineWidth = w * 0.004;
   ctx.beginPath();
-  ctx.roundRect(-w / 2 + w * 0.02, -h / 2 + w * 0.02, w - w * 0.04, h - w * 0.04, w * 0.02);
+  ctx.roundRect(frame.x, frame.y, frame.w, frame.h, rad);
+  ctx.clip();
+  ctx.fillStyle = `rgba(0,0,0,${0.5 * ease(age / 350)})`;
+  ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+  ctx.restore();
+  const w = Math.min(frame.w * 0.78, 420 * u), h = w * 0.78, cx = frame.x + frame.w / 2, cy = frame.y + frame.h / 2;
+  const s = 0.9 + 0.1 * back(age / 450);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  ctx.globalAlpha = Math.min(1, age / 200);
+  ctx.shadowColor = 'rgba(0,0,0,.5)';
+  ctx.shadowBlur = 50 * u;
+  ctx.shadowOffsetY = 20 * u;
+  ctx.fillStyle = 'rgba(28,28,30,.9)';
+  ctx.beginPath();
+  ctx.roundRect(-w / 2, -h / 2, w, h, 30 * u);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 0.75;
+  ctx.strokeStyle = 'rgba(255,255,255,.16)';
   ctx.stroke();
-  ctx.fillStyle = ink;
+  // circle draws, then the mark
+  const R = h * 0.2, oy = -h * 0.14, k1 = ease((age - 150) / 450), k2 = ease((age - 550) / 300);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = R * 0.14;
+  ctx.strokeStyle = col;
+  ctx.beginPath();
+  ctx.arc(0, oy, R, -Math.PI / 2, -Math.PI / 2 + k1 * Math.PI * 2);
+  ctx.stroke();
+  if (k1 >= 1) {
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.16;
+    ctx.beginPath();
+    ctx.arc(0, oy, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.lineWidth = R * 0.17;
+  ctx.beginPath();
+  if (clean) {
+    const pts = [[-R * 0.42, oy + R * 0.02], [-R * 0.1, oy + R * 0.34], [R * 0.46, oy - R * 0.3]];
+    const seg = k2 * 2;
+    ctx.moveTo(...pts[0]);
+    if (seg > 0) ctx.lineTo(pts[0][0] + (pts[1][0] - pts[0][0]) * Math.min(1, seg), pts[0][1] + (pts[1][1] - pts[0][1]) * Math.min(1, seg));
+    if (seg > 1) ctx.lineTo(pts[1][0] + (pts[2][0] - pts[1][0]) * (seg - 1), pts[1][1] + (pts[2][1] - pts[1][1]) * (seg - 1));
+  } else if (k2 > 0) {
+    ctx.moveTo(0, oy - R * 0.45);
+    ctx.lineTo(0, oy - R * 0.45 + R * 0.6 * k2);
+    ctx.moveTo(0, oy + R * 0.42);
+    ctx.lineTo(0, oy + R * 0.43);
+  }
+  ctx.stroke();
+  // words
+  const t = ease((age - 450) / 400);
+  ctx.globalAlpha = t;
+  ctx.fillStyle = C.white;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `800 ${h * 0.3}px ${SANS}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.04em';
-  ctx.fillText(clean ? 'COMPLETED' : 'FINISHED', 0, -h * 0.17);
-  ctx.font = `800 ${h * 0.15}px ${SANS}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.2em';
-  ctx.fillText(clean ? 'INDEPENDENTLY' : S.reviewFailed && !open ? 'HAVE IT CHECKED' : `${open} TO CHECK`, 0, h * 0.1);
-  ctx.font = `700 ${h * 0.1}px ${MONO}`;
-  if ('letterSpacing' in ctx) ctx.letterSpacing = '0.1em';
-  ctx.fillText(`${filled}/${S.fields.length} FILLED · ${S.elapsed || ''}`, 0, h * 0.32);
+  ctx.font = `700 ${h * 0.11}px ${FONT}`;
+  ctx.fillText(clean ? 'Completed independently' : 'Finished', 0, h * 0.2 + (1 - t) * 8 * u);
+  ctx.font = `500 ${h * 0.075}px ${FONT}`;
+  ctx.fillStyle = 'rgba(235,235,245,.64)';
+  const sub = clean ? `${filled} of ${S.fields.length} filled · ${S.elapsed || ''}` : S.reviewFailed && !open ? 'Have someone check the page' : `${open} ${open === 1 ? 'place needs' : 'places need'} another look`;
+  ctx.fillText(sub, 0, h * 0.34 + (1 - t) * 8 * u);
   ctx.restore();
 }
