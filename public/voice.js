@@ -326,9 +326,12 @@ export const voice = {
     rec.interimResults = false;
     rec.lang = TAGS[this.lang];
     rec.onresult = e => {
-      // Ignore our own voice: anything heard while speaking, or right after.
-      if (this.speaking || performance.now() - this.endedAt < 700) return;
-      this.handle(e.results[e.results.length - 1][0].transcript);
+      if (this.rec !== rec) return; // A retired recognizer can still deliver late results.
+      const text = e.results[e.results.length - 1][0].transcript;
+      // A bare wake may interrupt speech to open listening, never execute an action.
+      // Keep inline questions and relative commands blocked while our voice may echo.
+      if ((this.speaking || performance.now() - this.endedAt < 700) && this.wake(text)?.rest !== '') return;
+      this.handle(text);
     };
     rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { this.rec = null; this.deaf = true; } };
     rec.onend = () => { if (this.rec === rec) try { rec.start(); } catch { /* already running */ } };
