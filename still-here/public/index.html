@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#120d09">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Still Here</title>
+<meta name="description" content="One photo and a memory become a room you can stand inside, with every detail labeled by where it came from.">
+<link rel="icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="glow" aria-hidden="true"></div>
+
+<main id="home" class="screen on">
+  <div class="home-inner">
+    <h1>Still Here</h1>
+    <p class="lede">Step back into a room <em>you remember.</em></p>
+    <p class="sub">One photo and a few words about how it was. In under a minute you’re standing inside it, all the way around, with every detail marked as real, remembered or imagined.</p>
+    <div class="actions">
+      <label class="btn primary" for="photo">Choose a photo of the room</label>
+      <input id="photo" type="file" accept="image/*" hidden>
+      <button class="btn quiet" id="example">Try the example</button>
+    </div>
+    <p class="fine">An imagined reconstruction, not a scan.</p>
+  </div>
+</main>
+
+<main id="tell" class="screen">
+  <button class="back" data-go="home" aria-label="Back">‹</button>
+  <div class="tell-inner">
+    <figure class="print"><img id="thumb" alt="Your photo"></figure>
+    <h2>What do you remember about this room?</h2>
+    <p class="hint">Who was there, what time of day, what you could hear.</p>
+    <div class="say">
+      <textarea id="memory" rows="4" placeholder="My grandmother’s kitchen on a winter afternoon. She’s kneading bread, the radio is on, and the window light is warm and orange."></textarea>
+      <button class="mic" id="mic1" aria-label="Hold to speak"><span></span></button>
+    </div>
+    <p class="mic-note" id="note1">Hold the circle and speak, or type.</p>
+    <button class="btn primary wide" id="build" disabled>Build the room</button>
+  </div>
+</main>
+
+<main id="wait" class="screen">
+  <div class="wait-bg"><img id="waitimg" alt=""></div>
+  <div class="wait-inner">
+    <p class="kicker" id="clock">Building your room · 0 s</p>
+    <h2 id="question">&nbsp;</h2>
+    <div class="say small" id="answerbox">
+      <input id="answer" type="text" placeholder="Type, or hold the circle" autocomplete="off">
+      <button class="mic" id="mic2" aria-label="Hold to answer"><span></span></button>
+    </div>
+    <div class="row"><button class="btn quiet" id="skip">Skip</button><button class="btn primary" id="send">Add it</button></div>
+    <ol class="steps" id="steps"></ol>
+    <button class="btn primary wide enter" id="enter" hidden>Step inside</button>
+  </div>
+</main>
+
+<main id="room" class="screen">
+  <div id="stage"></div>
+  <div id="tags" aria-live="polite"></div>
+  <header class="room-top">
+    <button class="round" id="leave" aria-label="Leave the room">‹</button>
+    <div class="room-title"><strong id="rtitle">Your room</strong><span id="rsub">An imagined reconstruction</span></div>
+    <button class="round" id="mute" aria-label="Sound on">♪</button>
+  </header>
+  <p class="caption" id="caption"></p>
+  <div class="legend" id="legend" hidden>
+    <span class="k photo">From your photo</span><span class="k memory">From your memory</span><span class="k invented">Imagined</span>
+  </div>
+  <footer class="room-bottom">
+    <div class="stick" id="stick" aria-label="Walk"><span></span></div>
+    <button class="pill" id="real" aria-pressed="false">Show what’s real</button>
+    <button class="round" id="tilt" aria-label="Look around by moving your phone">⟳</button>
+  </footer>
+  <p class="howto" id="howto">Drag to look around · W A S D to walk</p>
+  <div class="sheet" id="sheet" hidden>
+    <p class="sheet-title" id="sheetTitle"></p>
+    <p class="sheet-src" id="sheetSrc"></p>
+    <div class="row"><button class="btn quiet" data-act="keep">Keep it</button><button class="btn quiet" data-act="remove">Remove it</button><button class="btn quiet" data-act="wrong">That’s wrong</button></div>
+  </div>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
