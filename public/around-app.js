@@ -81,9 +81,9 @@ async function start(auto = false) {
   voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START).then(() => {
     // Right after the greeting Nib is already listening (chime + orb): ask anything without saying Nib.
     // News waits 6 s for the question; a hazard still cuts in.
-    askUntil = performance.now() + 6000;
+    askUntil = performance.now() + 8000;
     voice.earcon(true);
-    holdNews = setTimeout(() => { holdNews = 0; speakQueue.busy = false; speakQueue(); }, 6000);
+    holdNews = setTimeout(() => { holdNews = 0; speakQueue.busy = false; speakQueue(); }, 8000);
   });
   loop(++gen);
   eyesReady.then(() => requestAnimationFrame(watch));
@@ -115,7 +115,7 @@ async function startEars(mic) {
         if (voice.echo(text, said)) return; // Nib hearing itself through the speaker
         // "Nib" opens an 8 s window; "Hey Nib, <words>" acts at once. Commands always win over questions:
         // "Hey Nib, go home" goes home, it doesn't ask the camera about "go home".
-        const wake = voice.wake(text), windowOpen = askUntil > performance.now();
+        const wake = voice.wake(text), windowOpen = askUntil + 3000 > performance.now(); // + time for the words to come back from the ears
         if (wake && !wake.rest) { askUntil = performance.now() + 8000; queue.length = 0; voice.stop(); voice.earcon(true); return; }
         const words = wake ? wake.rest : text;
         if (command(words)) { askUntil = 0; return; }
