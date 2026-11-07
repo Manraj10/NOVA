@@ -23,6 +23,7 @@ const BARE = /^((hey|hi|ok|okay) )?(nib|nibb|knib|nip|neb|nibs|nibbs|knob)$/;
 const RANK = [/premium/i, /enhanced/i, /natural|neural/i, /online|google/i, /ava|zoe|samantha|aria|jenny|siri/i];
 const score = v => { const k = RANK.findIndex(r => r.test(v.name)); return k < 0 ? RANK.length : k; };
 
+// iOS: audioSession "playback" blocks the mic, so while Nib's ears are open (micOpen) it stays "play-and-record".
 export const voice = {
   lang: 'en',
   speaking: false,
@@ -47,7 +48,7 @@ export const voice = {
   unlock() {
     this.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
     this.ctx.resume?.();
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari 16.4+ only */ }
+    try { if (navigator.audioSession) navigator.audioSession.type = this.micOpen ? 'play-and-record' : 'playback'; } catch { /* Safari 16.4+ only */ }
     if (!this.unlocked) {
       // iOS only lets speech start from inside a tap: speak a silent line now, before any await.
       const u = new SpeechSynthesisUtterance(' ');
@@ -247,7 +248,7 @@ export const voice = {
         if (!r) return;
         this.rec = null;
         try { r.abort(); } catch { /* already stopped */ }
-        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari only */ }
+        try { if (navigator.audioSession) navigator.audioSession.type = this.micOpen ? 'play-and-record' : 'playback'; } catch { /* Safari only */ }
       },
       resume: () => setTimeout(() => {
         if (!this.rec && !this.deaf && !this.speaking && this.onCommand && allowed()) this.listen(this.onCommand);
@@ -311,7 +312,7 @@ export const voice = {
       stop: async () => {
         try { rec.stop(); } catch { /* already stopped */ }
         await Promise.race([done, new Promise(r => setTimeout(r, 1500))]);
-        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari only */ }
+        try { if (navigator.audioSession) navigator.audioSession.type = this.micOpen ? 'play-and-record' : 'playback'; } catch { /* Safari only */ }
         this.ctx?.resume?.(); // the mic can suspend audio on iOS
         if (resume && this.onCommand) this.listen(this.onCommand); // only if the browser recognizer was the ears
         return `${final} ${interim}`.trim();

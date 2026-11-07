@@ -3,7 +3,7 @@ import { voice } from './voice.js';
 import { render, anchorOf } from './draw.js';
 import { makeSim } from './sim.js';
 import { makeDrift } from './drift.js';
-import { makeEars } from './ears.js';
+import { makeEars, MIC } from './ears.js';
 
 const $ = id => document.getElementById(id);
 const app = $('app'), video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');
@@ -20,7 +20,7 @@ const T = {
   en: {
     hold: 'Hold the form still. Reading it now.',
     count: (title, n) => `${title}. I found ${n} ${n === 1 ? 'place' : 'places'} to fill.`,
-    first: l => `First: ${l}. Rest one finger of your free hand on the page.`,
+    first: l => `First: ${l}. Lay your free hand flat on the page, then point with one finger.`,
     none: "I can't find any blanks. Slide the whole form under the camera, then tap to try again.",
     next: 'Next:',
     stop: 'Stop.',
@@ -36,12 +36,13 @@ const T = {
     skipped: l => `You skipped ${l}.`,
     review: l => `I couldn't read ${l} clearly. Ask me to go back to it if you want to redo it.`,
     unsure: "I'll flag that one so you can check it at the end.",
-    noHand: "I can't see your hand. Rest one finger on the page.",
+    noHand: "I can't see your hand. Lay your whole hand flat on the page, then point.",
     noCamera: 'Nib needs the camera to see the form. Allow camera access for this page, then reload.',
     askHint: 'Hold the screen to ask me anything.',
     listening: 'Listening…',
     heardNothing: "I didn't catch that. Hold and ask again.",
     noMic: 'Voice questions need Chrome, with the microphone allowed.',
+    noEars: "I can't use the microphone, so saying Nib won't work. Hold the screen to ask me instead.",
     left: n => `${n} ${n === 1 ? 'place' : 'places'} left.`,
     here: l => `You're on ${l}.`,
     firstOne: 'This is the first one.',
@@ -80,7 +81,7 @@ const T = {
   es: {
     hold: 'Mantén el formulario quieto. Lo estoy leyendo.',
     count: (title, n) => `${title}. Encontré ${n} ${n === 1 ? 'espacio' : 'espacios'} por llenar.`,
-    first: l => `Primero: ${l}. Apoya un dedo de la mano libre en la hoja.`,
+    first: l => `Primero: ${l}. Pon la mano libre plana sobre la hoja y luego señala con un dedo.`,
     none: 'No encuentro espacios en blanco. Pon todo el formulario bajo la cámara y toca para intentar de nuevo.',
     next: 'Siguiente:',
     stop: 'Alto.',
@@ -96,12 +97,13 @@ const T = {
     skipped: l => `Saltaste ${l}.`,
     review: l => `No pude leer bien ${l}. Pídeme volver a ese campo si quieres rehacerlo.`,
     unsure: 'Lo marco para que lo revises al final.',
-    noHand: 'No veo tu mano. Apoya un dedo en la hoja.',
+    noHand: 'No veo tu mano. Pon toda la mano plana sobre la hoja y luego señala.',
     noCamera: 'Nib necesita la cámara para ver el formulario. Permite el acceso a la cámara y recarga la página.',
     askHint: 'Mantén presionada la pantalla para preguntarme lo que sea.',
     listening: 'Escuchando…',
     heardNothing: 'No te entendí. Mantén presionado y pregunta otra vez.',
     noMic: 'Las preguntas por voz necesitan Chrome con el micrófono permitido.',
+    noEars: 'No puedo usar el micrófono, así que decir Nib no funcionará. Mantén presionada la pantalla para preguntarme.',
     left: n => `Faltan ${n}.`,
     here: l => `Estás en ${l}.`,
     firstOne: 'Este es el primero.',
@@ -140,7 +142,7 @@ const T = {
   hi: {
     hold: 'फ़ॉर्म को स्थिर रखिए। मैं इसे पढ़ रहा हूँ।',
     count: (title, n) => `${title}। भरने के लिए ${n} जगहें मिलीं।`,
-    first: l => `पहले: ${l}। खाली हाथ की एक उंगली पन्ने पर रखिए।`,
+    first: l => `पहले: ${l}। खाली हाथ को पन्ने पर सपाट रखिए, फिर एक उंगली से इशारा कीजिए।`,
     none: 'मुझे कोई खाली जगह नहीं दिखी। पूरा फ़ॉर्म कैमरे के नीचे रखिए और फिर टैप कीजिए।',
     next: 'अगला:',
     stop: 'रुकिए।',
@@ -156,12 +158,13 @@ const T = {
     skipped: l => `आपने ${l} छोड़ दिया।`,
     review: l => `मैं ${l} ठीक से नहीं पढ़ पाया। दोबारा भरना हो तो मुझसे उस पर वापस जाने को कहिए।`,
     unsure: 'मैं इसे निशान लगा देता हूँ, ताकि आप आख़िर में जाँच सकें।',
-    noHand: 'मुझे आपका हाथ नहीं दिख रहा। एक उंगली पन्ने पर रखिए।',
+    noHand: 'मुझे आपका हाथ नहीं दिख रहा। पूरा हाथ पन्ने पर सपाट रखिए, फिर इशारा कीजिए।',
     noCamera: 'फ़ॉर्म देखने के लिए Nib को कैमरा चाहिए। कैमरे की अनुमति दीजिए और पेज फिर से खोलिए।',
     askHint: 'कुछ भी पूछने के लिए स्क्रीन दबाकर रखिए।',
     listening: 'सुन रहा हूँ…',
     heardNothing: 'मैं समझ नहीं पाया। दबाकर रखिए और फिर पूछिए।',
     noMic: 'आवाज़ से सवाल के लिए Chrome और माइक्रोफ़ोन की अनुमति चाहिए।',
+    noEars: 'मैं माइक्रोफ़ोन इस्तेमाल नहीं कर पा रहा, इसलिए निब बोलना काम नहीं करेगा। पूछने के लिए स्क्रीन दबाकर रखिए।',
     left: n => `${n} बाकी हैं।`,
     here: l => `आप ${l} पर हैं।`,
     firstOne: 'यह पहला है।',
@@ -200,7 +203,7 @@ const T = {
   zh: {
     hold: '请把表格放稳，我正在读。',
     count: (title, n) => `${title}。我找到 ${n} 处要填写。`,
-    first: l => `第一处：${l}。用空着的那只手，把一根手指放在纸上。`,
+    first: l => `第一处：${l}。把空着的那只手平放在纸上，然后用一根手指指着。`,
     none: '我没找到空白处。请把整张表放到摄像头下，然后点一下重试。',
     next: '下一处：',
     stop: '停。',
@@ -216,12 +219,13 @@ const T = {
     skipped: l => `你跳过了：${l}。`,
     review: l => `${l} 我没看清。想重写的话，让我回到那一处。`,
     unsure: '我先标记一下，最后提醒你检查。',
-    noHand: '我看不到你的手。请把一根手指放在纸上。',
+    noHand: '我看不到你的手。请把整只手平放在纸上，然后用手指指着。',
     noCamera: 'Nib 需要摄像头才能看到表格。请允许使用摄像头，然后刷新页面。',
     askHint: '按住屏幕就可以问我任何问题。',
     listening: '正在听…',
     heardNothing: '我没听清。按住屏幕再问一次。',
     noMic: '语音提问需要 Chrome，并允许使用麦克风。',
+    noEars: '我用不了麦克风，所以说“Nib”不管用。请按住屏幕来问我。',
     left: n => `还剩 ${n} 处。`,
     here: l => `你现在在：${l}。`,
     firstOne: '这是第一处。',
@@ -423,14 +427,27 @@ function source() {
   return { img: video, w: video.videoWidth, h: video.videoHeight };
 }
 
+// Phones get the full 4:3 sensor (16:9 crops it, and a narrower view cuts the hand off), zoomed out
+// to the widest lens where Safari allows it. The mic comes in the same capture as the camera: on
+// iPhone a second, separate capture can silence the first.
+const PHONE = matchMedia('(pointer: coarse)').matches;
 async function startCamera() {
   const id = $('camera').value;
-  const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: id ? { deviceId: { exact: id }, ...size } : { facingMode: { ideal: 'environment' }, ...size },
-  });
-  video.srcObject = stream;
+  // A phone held upright over the page wants a tall 3:4 picture; a landscape one gets letterboxed small.
+  const tall = PHONE && innerHeight > innerWidth;
+  const size = !PHONE ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
+    : tall ? { width: { ideal: 1440 }, height: { ideal: 1920 }, aspectRatio: { ideal: 3 / 4 } } : { width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4 / 3 } };
+  const video_ = id ? { deviceId: { exact: id }, ...size } : { facingMode: { ideal: 'environment' }, ...size };
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: video_, audio: MIC }); }
+  catch (e) { if (e?.name === 'NotFoundError' || e?.name === 'NotAllowedError') stream = await navigator.mediaDevices.getUserMedia({ video: video_ }); else throw e; }
+  S.mic = stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null;
+  video.srcObject = new MediaStream(stream.getVideoTracks());
+  const track = stream.getVideoTracks()[0];
+  try {
+    const zoom = track.getCapabilities?.().zoom;
+    if (zoom && zoom.min < (track.getSettings().zoom ?? 1)) await track.applyConstraints({ advanced: [{ zoom: zoom.min }] });
+  } catch { /* no zoom control on this browser */ }
   await video.play();
   await listCameras();
 }
@@ -510,13 +527,13 @@ async function begin() {
   $('alert').hidden = true;
   voice.unlock();
   stayAwake();
-  startEars();
   warmVoice();
   app.dataset.screen = 'run';
   $('ambient').classList.add('on');
   if (!S.sim) {
     try { await startCamera(); } catch (e) { setMode('start'); app.dataset.screen = 'start'; cameraFail(e); $('ambient').classList.remove('on'); return say(t().noCamera); }
   }
+  startEars();
   await readForm();
 }
 
@@ -1176,6 +1193,8 @@ async function startEars() {
   voice.onCommand = onVoiceCommand;
   if (new URLSearchParams(location.search).has('bot')) return; // the robot finger has no mouth
   try {
+    voice.micOpen = true;
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
     S.ears = await makeEars({
       ctx: voice.ctx,
       lang: () => S.lang,
@@ -1185,9 +1204,13 @@ async function startEars() {
         if (S.awaitQ > performance.now()) return gotQuestion(text);
         voice.handle(text);
       },
-    }).start();
-  } catch {
-    voice.listen(onVoiceCommand); // our ears can't open the mic here: use the browser's recognizer
+    }).start(S.mic);
+    S.earsErr = '';
+  } catch (e) {
+    voice.micOpen = false;
+    S.earsErr = e?.name || 'error';
+    say(t().noEars); // said once, so a blind user knows to hold the screen instead
+    voice.listen(onVoiceCommand); // the browser's recognizer, where it works
   }
 }
 
@@ -1467,7 +1490,8 @@ function hud(now) {
   const ai = S.lastApi ? row('Last AI call', `${S.lastApi.job} · ${S.lastApi.secs.toFixed(1)} s`) : '';
   $('panelHud').innerHTML = S.sim ? row('Mode', 'Practice') + row('Fingertip', 'your pointer') + lock + ai
     : row('Hand tracking', `${S.fps} fps`, S.fps >= 15) + row('Hands in view', hands || 'none', !!hands)
-      + (S.pointerLabel ? row('Pointing hand', 'locked') : '') + lock + ai;
+      + (S.pointerLabel ? row('Pointing hand', 'locked') : '') + lock + ai
+      + row('Ears ("Nib")', S.ears ? 'listening' : S.earsErr ? `off (${S.earsErr})` : 'off', !!S.ears);
 }
 
 function status(text) { $('status').textContent = text; }

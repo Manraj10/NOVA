@@ -3,6 +3,7 @@
 // including iPhone Safari (its recognizer can't restart without a tap) and Brave (it has none).
 
 const FRAME = 2048;
+export const MIC = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
 export function makeEars({ ctx, ignore, onText, lang }) {
   let floor = 0.01, live = false, loud = 0, quietMs = 0, chunks = [], pre = [], busy = 0;
@@ -59,8 +60,9 @@ export function makeEars({ ctx, ignore, onText, lang }) {
 
   return {
     get busy() { return busy > 0 || live; },
-    async start() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    // stream: the mic captured together with the camera (one iOS capture session), or ask for one.
+    async start(stream) {
+      stream ||= await navigator.mediaDevices.getUserMedia({ audio: MIC });
       const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(FRAME, 1, 1), mute = ctx.createGain();
       mute.gain.value = 0; // processing only runs when connected to the output; send it nothing
       proc.onaudioprocess = e => frame(e.inputBuffer.getChannelData(0));
