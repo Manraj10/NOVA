@@ -93,9 +93,13 @@ async function build(photo, mem) {
 
     st.go('back');
     const strip = stripInput(front);
-    // two tries in parallel; keep the one that meets its edges most cleanly
-    const tries = await Promise.allSettled([0, 1].map(() => api('back', { strip, memory: full }).then(r => load(r.image))));
-    const backs = tries.filter(t => t.status === 'fulfilled').map(t => t.value);
+    // three tries in parallel; keep the one that meets its edges most cleanly
+    // take what has arrived 4 s after the first good one, so one slow try can't hold the room hostage
+    const backs = [];
+    await new Promise(ok => {
+      let left = 3;
+      for (let i = 0; i < 3; i++) api('back', { strip, memory: full }).then(r => load(r.image)).then(b => { backs.push(b); if (backs.length === 1) setTimeout(ok, 4000); }).catch(console.warn).finally(() => { if (--left === 0) ok(); });
+    });
     if (!backs.length) throw new Error('The walls behind you could not be painted. Try again.');
     const back = backs.map(b => [b, edgeScore(b, front.width, front.height)]).sort((a, b) => a[1] - b[1])[0][0];
     st.done('back'); window.__parts = { front, back, backs };
@@ -292,4 +296,4 @@ async function bake(room) {
   });
   console.log('baked');
 }
-window.stillHere = { build, enter, get view() { return view; } };
+window.stillHere = { build, enter, bake, tagsFrom, get view() { return view; } };

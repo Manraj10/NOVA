@@ -38,17 +38,23 @@ function image(v, what) {
 }
 
 const IMAGE_MODELS = ['google/gemini-3.1-flash-image', 'google/gemini-nano-banana-2.1'];
+// Image models swing from 9 s to 45 s under load: if the first hasn't answered in 14 s (or fails),
+// start the second as well and take whichever picture arrives first.
 async function paint(content) {
-  let last;
-  for (const model of IMAGE_MODELS) {
-    try {
-      const j = await call({ model, modalities: ['image', 'text'], image_config: { aspect_ratio: '21:9' }, messages: [{ role: 'user', content }] }, 50000);
-      const url = j.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      if (url) return { image: url };
-      last = fail('The painter sent back no picture.', 502);
-    } catch (e) { last = e; }
-  }
-  throw last;
+  const t0 = Date.now();
+  const one = async model => {
+    const j = await call({ model, modalities: ['image', 'text'], image_config: { aspect_ratio: '21:9' }, messages: [{ role: 'user', content }] }, 55000 - (Date.now() - t0));
+    const url = j.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    if (!url) throw fail('The painter sent back no picture.', 502);
+    console.log('paint', model, ((Date.now() - t0) / 1000).toFixed(1) + 's');
+    return { image: url };
+  };
+  const first = one(IMAGE_MODELS[0]);
+  const backup = new Promise((ok, no) => {
+    const t = setTimeout(ok, 14000);
+    first.then(() => { clearTimeout(t); no(fail('not needed', 500)); }, () => { clearTimeout(t); ok(); });
+  }).then(() => one(IMAGE_MODELS[1]));
+  return Promise.any([first, backup]).catch(e => { throw e.errors?.[0] || e; });
 }
 
 export async function scene({ photo, memory } = {}) {
@@ -65,7 +71,7 @@ export async function back({ strip, memory } = {}) {
   const m = str(memory, 1500);
   return paint([
     { type: 'text', text: `This image is one wide eye-level view of a room with a flat gray gap in the middle. The left part and the right part are real pieces of the same room. Fill the gray gap with the rest of this room so the whole image is one continuous seamless view, as if turning around inside it: same light, same floor, same ceiling height, same horizon line, same style and era. Continue the walls naturally; the far wall can have a window, a door, furniture or shelves that fit. The memory: ${m}
-Keep the left and right parts exactly as they are, pixel for pixel. No people in the gap. No text, no borders.` },
+Keep the left and right parts exactly as they are, pixel for pixel. Do not repeat any person or object that appears in the left or right part: the gap is a different stretch of the room, with no people in it. No text, no borders.` },
     image(strip, 'the strip image'),
   ]);
 }

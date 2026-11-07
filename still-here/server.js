@@ -10,7 +10,7 @@ import { speak } from './lib/speak.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pub = join(root, 'public');
-for (const f of [join(root, '.env'), join(root, '../nib/.env')]) if (!process.env.VERCEL && !process.env.OPENROUTER_KEY && existsSync(f)) process.loadEnvFile(f);
+for (const f of [join(root, '.env'), join(root, '../.env'), join(root, '../nib/.env')]) if (!process.env.VERCEL && !process.env.OPENROUTER_KEY && existsSync(f)) process.loadEnvFile(f);
 
 const PORT = Number(process.env.PORT) || 8795;
 const TYPES = {
