@@ -71,7 +71,7 @@ function fixture(t, mode = 'guide', options = {}) {
       return new Promise(resolve => requests.push({ payload, resolve, signal: init.signal }));
     },
     setTimeout: timers.setTimer, clearTimeout: timers.clearTimer,
-    setCue() {}, showHeard() {}, buzz() {}, $: () => ({ dataset: {}, setAttribute() {} }),
+    renderSessionContext() {}, setCue() {}, showHeard() {}, buzz() {}, $: () => ({ dataset: {}, setAttribute() {} }),
     t: () => ({ heardNothing: 'nothing heard', noEars: 'hold to ask', noMic: 'no mic' }),
     say(text) { said.push(text); return Promise.resolve(); }, answer: text => answers.push(text),
     finishWriting() { finishes++; }, redo() {}, repeat() {}, skip() {},
@@ -124,7 +124,10 @@ test('state is captured at speech onset, before the rest of its audio arrives', 
   const f = fixture(t, 'write'); await f.context.startEars(); f.feed(.1); f.S.mode = 'confirm';
   for (let i = 0; i < 2; i++) f.feed(.1);
   for (let i = 0; i < 6; i++) f.feed(0);
-  assert.equal(f.requests.length, 0); assert.equal(f.S.fields[0].done, false);
+  // Session-valid audio must be transcribed before we can identify a global wake.
+  // Its old mode still prevents a completion command from being delivered.
+  assert.equal(f.requests.length, 1); await f.respond(0, 'done');
+  assert.equal(f.S.fields[0].done, false); assert.equal(f.finishes(), 0);
 });
 
 test('wake and already-captured follow-up are transcribed in capture order', async t => {

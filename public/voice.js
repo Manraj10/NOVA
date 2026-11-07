@@ -314,6 +314,14 @@ export const voice = {
     return !!h && context.recent.some(line => n(line).includes(h));
   },
 
+  wake(text) {
+    const said = String(text || '').trim(), low = said.toLowerCase();
+    const bare = low.replace(/[.,!?。！？"']/g, '').trim();
+    if (BARE.test(bare)) return { rest: '' };
+    const match = WAKE.exec(low);
+    return match ? { rest: said.slice(match[0].length).replace(/^[\s,.!?]+/, '') } : null;
+  },
+
   handle(text) {
     const onCommand = this.onCommand;
     const said = String(text || '').trim(), low = said.toLowerCase();
