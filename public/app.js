@@ -355,7 +355,16 @@ function trackHands(now) {
   S.handPts = r.landmarks || [];
   S.handLabels = (r.handedness || r.handednesses || []).map(h => h?.[0]?.categoryName || '');
   S.trackN = (S.trackN || 0) + 1;
-  if (!S.handPts.length) { S.pointerIdx = -1; return; }
+  if (!S.handPts.length) {
+    // A fresh empty tracking result invalidates the old fingertip immediately, even if
+    // it was seen less than 150 ms ago. Returning with its dwell could falsely arrive.
+    S.pointerIdx = -1;
+    S.tip = null;
+    S.tipSeen = 0;
+    S.arrivedSince = 0;
+    S.onTarget = false;
+    return;
+  }
   S.handAt = now;
   S.pointerIdx = pickPointer(now);
   if (S.pointerIdx < 0) { S.tipSeen = 0; S.arrivedSince = 0; S.onTarget = false; return; }
