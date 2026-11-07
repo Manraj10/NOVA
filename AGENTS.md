@@ -4,7 +4,7 @@ Read README.md first. Nib is a screen reader for paper: a camera over a form, a 
 
 ## Commands
 
-- `npm start` runs the app at http://localhost:8787 (practice mode: `/?sim`, no camera or key needed).
+- `npm start` runs the app at http://localhost:8787 (practice mode: `/paper.html?sim`, no camera or key needed).
 - `npm test` must pass before any PR. It needs no key.
 - `npm run check` spends real API credit. Run it only when your person asks.
 

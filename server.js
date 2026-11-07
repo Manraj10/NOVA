@@ -64,7 +64,7 @@ export async function handler(req, res) {
 
 if (!process.env.VERCEL) http.createServer(handler).listen(PORT, () => {
   console.log(`Nib running at http://localhost:${PORT}`);
-  console.log(`Practice mode:   http://localhost:${PORT}/?sim`);
+  console.log(`Practice mode:   http://localhost:${PORT}/paper.html?sim`);
   const p = provider();
   console.log(`Form reading:    ${p ? `on (${p})` : 'OFF: add GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY to .env'}`);
 });

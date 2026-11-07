@@ -7,7 +7,7 @@ Check-in 10:00 at Tepper. Hacking 11:00 to 5:00. Judging 6:00 to 7:45 (5 min + 1
 1. Open a terminal in `Documents\nova-hackathon\nib` and run `npm start` (if it isn't already running). Open http://localhost:8787 on the laptop to check it loads.
 2. Phone link (live as of 7:40 AM while the laptop stays awake and online): https://significance-cheapest-mood-mariah.trycloudflare.com
    If it stops loading, in another terminal run `cloudflared tunnel --protocol http2 --url http://localhost:8787`. It prints a new `https://...trycloudflare.com` link each time. Open that link on your iPhone.
-   - If cloudflared fails (some Wi-Fi blocks it, which happened overnight), use practice mode on the laptop (`http://localhost:8787/?sim`) and retry the tunnel on the venue Wi-Fi.
+   - If cloudflared fails (some Wi-Fi blocks it, which happened overnight), use practice mode on the laptop (`http://localhost:8787/paper.html?sim`) and retry the tunnel on the venue Wi-Fi.
 3. On the phone: tap anywhere to start and allow the camera. Prop the phone about 30 to 40 cm above a printed form, pointing straight down.
 
 ## The physical test (what to try, in order)
@@ -31,5 +31,5 @@ Tell me what went wrong in plain words (which step, what it said), and I'll fix 
 
 ## If something breaks on stage
 
-- Camera or Wi-Fi dies: open `/?sim` (practice mode). The mouse is the fingertip. Space finishes writing; hold Space to ask.
+- Camera or Wi-Fi dies: open `/paper.html?sim` (practice mode). The mouse is the fingertip. Space finishes writing; hold Space to ask.
 - Speech is silent on the iPhone: make sure the ringer switch is on and the volume is up, then tap Start again.

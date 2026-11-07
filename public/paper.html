@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nib</title>
+  <meta name="description" content="A screen reader for paper. Nib reads a form aloud, guides your fingertip to a blank, and reads your writing back for you to check.">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=Caveat:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The live page, blurred, fills the window behind the glass. -->
+  <div class="ambient" id="ambient" aria-hidden="true"></div>
+
+  <main id="app" data-screen="start" data-mode="start">
+    <header class="bar glass">
+      <a class="brand" href="./" aria-label="Nib home"><span class="app-icon" aria-hidden="true"></span><span class="wordmark">Nib</span></a>
+      <div class="doc-context">
+        <div class="session-kicker"><span id="sessionMode">Camera mode</span><span id="sessionState">Ready</span></div>
+        <p class="current-field" id="currentField" hidden></p>
+        <p class="doc" id="docTitle"></p>
+      </div>
+      <div class="steps">
+        <span class="count" id="count"></span>
+        <ol class="progress" id="progress" aria-hidden="true"></ol>
+      </div>
+    </header>
+
+    <section class="stage" id="stage">
+      <video id="video" playsinline muted></video>
+      <div class="view">
+        <canvas id="canvas" aria-hidden="true"></canvas>
+        <figure class="readback glass" id="readback" aria-label="Handwriting readback" hidden>
+          <img id="rbImg" alt="">
+          <figcaption>
+            <span class="rb-label" id="rbLabel"></span>
+            <span class="rb-text" id="rbText"></span>
+            <p class="rb-help">Keep it if it is right, or write it again.</p>
+            <button class="rb-redo" id="rbRedo" type="button">Write it again</button>
+          </figcaption>
+        </figure>
+      </div>
+
+      <aside class="panel glass" aria-label="What Nib sees">
+        <p class="panel-label">What Nib sees</p>
+        <h2 class="panel-title" id="panelTitle">No form yet</h2>
+        <p class="panel-meta" id="panelMeta" hidden></p>
+        <p class="panel-find" id="panelFind" hidden></p>
+        <ol class="fields" id="fieldList" tabindex="0" aria-label="Places to fill"></ol>
+        <div class="panel-foot" id="panelFoot" hidden></div>
+        <p class="panel-hud" id="panelHud" aria-hidden="true"></p>
+      </aside>
+
+      <div class="start">
+        <button class="start-hit" id="startBtn">Start reading a form</button>
+        <div class="start-grid">
+          <div class="start-body">
+            <div class="alert" id="alert" role="alert" hidden><strong></strong><p></p></div>
+            <span class="hero-icon" aria-hidden="true"></span>
+            <h1 class="hero">Your paper.<br>Your handwriting.</h1>
+            <p class="lede">Nib reads a paper form, guides your fingertip to a blank, and reads your writing back for you to check.</p>
+            <p class="cta" aria-hidden="true"><span class="tab">Start reading</span></p>
+            <div class="controls">
+              <div class="langs" role="group" aria-label="Language">
+                <button data-lang="en">English</button>
+                <button data-lang="es" lang="es">Español</button>
+                <button data-lang="hi" lang="hi">हिन्दी</button>
+                <button data-lang="zh" lang="zh">中文</button>
+              </div>
+              <label class="cam" hidden><span>Camera</span>
+                <select id="camera"><option value="">Default camera</option></select>
+              </label>
+            </div>
+            <p class="status" id="status" role="status"></p>
+            <p class="status reader" id="reader"></p>
+            <a class="mode-link" id="modeLink" href="?sim">Practice with a sample form</a>
+            <a class="mode-link around-link" href="around.html">Around me: hear who and what is near you</a>
+            <a class="mode-link around-link" href="./">Home</a>
+          </div>
+          <!-- A looping demo: Live Text brackets hop from blank to blank while the fingertip follows. -->
+          <figure class="demo" aria-hidden="true">
+            <div class="demo-glow"></div>
+            <div class="demo-paper">
+              <i class="demo-title"></i><i class="demo-sub"></i>
+              <i class="demo-row" style="--y: 30%"></i><i class="demo-row" style="--y: 44%"></i><i class="demo-row" style="--y: 58%"></i>
+              <i class="demo-text" style="--y: 70%"></i><i class="demo-text" style="--y: 74%; --w: 52%"></i>
+              <i class="demo-row" style="--y: 86%"></i>
+              <span class="demo-target"><i></i><i></i><i></i><i></i></span>
+              <span class="demo-label">Full name</span>
+              <span class="demo-tip"></span>
+            </div>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <footer class="caption glass">
+      <div class="cue" id="cue" aria-hidden="true"><span class="cue-glyph" id="cueGlyph"></span><span class="cue-word" id="cueWord"></span></div>
+      <p class="caption-text" id="captionText"></p>
+      <div class="buttons">
+        <button class="talk" id="talk" aria-pressed="false" aria-label="Ask Nib a question. Hold to talk, or tap to start and tap again to stop.">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5 11.5a7 7 0 0 0 14 0M12 18.5V21.5"/></svg>
+          <span>Ask</span>
+        </button>
+        <button class="action" id="action">Start</button>
+      </div>
+    </footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
