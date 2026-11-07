@@ -36,6 +36,18 @@ body { background-color: var(--bg); }
 }
 .nib-hub .site-header { border-bottom: 1px solid #d2e0ff17; }
 .nib-hub .hero { position: relative; }
+.nib-hub .hero { grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); align-items: center; }
+.voice-console { display: grid; justify-items: stretch; align-content: end; gap: 10px; }
+.voice-map { width: 100%; max-height: 250px; overflow: visible; }
+.signal-rules { stroke: #d2e0ff20; stroke-width: .7; }
+.signal-core { fill: #11151c; stroke: #c7d0df66; stroke-width: 1; }
+.signal-halo { stroke: #ffdf5540; stroke-width: .8; }
+.signal-wave { stroke: var(--tint); stroke-width: 2.5; }
+.signal-labels { fill: var(--label-2); font: 9px var(--nib-mono); letter-spacing: 1.2px; }
+.signal-center-label { fill: var(--label-3); font-size: 8px; }
+.nib-hub:has(#listen[aria-pressed="true"]) .signal-halo { stroke: var(--tint); transform-origin: 180px 119px; animation: voice-ready 2.4s ease-in-out infinite; }
+.nib-hub:has(#listen[aria-pressed="true"]) .signal-core { stroke: var(--tint); }
+@keyframes voice-ready { 50% { transform: scale(1.1); opacity: .3; } }
 .nib-hub .hero-copy { gap: 18px; }
 .signal-label {
   display: inline-flex; align-items: center; gap: 9px; margin: 0;
@@ -65,6 +77,8 @@ body { background-color: var(--bg); }
   .quiet-button:hover { border-color: #758094; background: #ffffff0a; }
 }
 @media (max-width: 700px) {
+  .nib-hub .hero { grid-template-columns: minmax(0, 1fr); }
+  .voice-map { display: none; }
   .nib-hub .hero-copy { gap: 10px; }
   .signal-label { font-size: 10px; letter-spacing: .07em; }
   .nib-hub .card-mark { border: 0; padding: 0; }

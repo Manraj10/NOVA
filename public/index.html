@@ -25,7 +25,19 @@
       <h1 id="title">Your world.<br><span>Out loud.</span></h1>
       <p class="tag">Read a form. Hear what’s nearby.<br>Recreate a place from memory.</p>
     </div>
-    <button id="listen" class="cta" type="button" aria-label="Enable voice control. Tap once, allow the microphone, then say Hey Nib or Nib.">Tap to enable Nib</button>
+    <div class="voice-console">
+      <svg class="voice-map" viewBox="0 0 360 250" aria-hidden="true">
+        <defs><radialGradient id="voiceGlow"><stop stop-color="#ffdf55" stop-opacity=".12"/><stop offset="1" stop-color="#ffdf55" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="180" cy="119" r="109" fill="url(#voiceGlow)"/>
+        <g class="signal-rules" fill="none"><ellipse cx="180" cy="119" rx="130" ry="50"/><ellipse cx="180" cy="119" rx="78" ry="94" transform="rotate(-34 180 119)"/><ellipse cx="180" cy="119" rx="78" ry="94" transform="rotate(34 180 119)"/><path d="M28 119h304M180 16v206"/></g>
+        <g fill="#adb4c0"><circle cx="50" cy="119" r="3"/><circle cx="92" cy="82" r="2"/><circle cx="104" cy="170" r="3"/><circle cx="130" cy="35" r="2"/><circle cx="156" cy="207" r="2"/><circle cx="210" cy="26" r="3"/><circle cx="241" cy="184" r="2"/><circle cx="274" cy="86" r="3"/><circle cx="305" cy="135" r="2"/><circle cx="217" cy="213" r="2"/></g>
+        <circle class="signal-halo" cx="180" cy="119" r="53" fill="none"/>
+        <circle class="signal-core" cx="180" cy="119" r="41"/>
+        <path class="signal-wave" d="M154 119h9l5-13 8 28 8-35 7 31 6-18 4 7h6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <g class="signal-labels"><text x="31" y="65">01 / TRACE</text><text x="242" y="53">02 / AROUND</text><text x="240" y="221">03 / MEMORY</text><text class="signal-center-label" x="180" y="246" text-anchor="middle">ONE VOICE. YOUR WORLD.</text></g>
+      </svg>
+      <button id="listen" class="cta" type="button" aria-pressed="false" aria-label="Enable voice control. Tap once, allow the microphone, then say Hey Nib or Nib.">Tap to enable Nib</button>
+    </div>
   </section>
   <nav id="modeChoices" class="cards" aria-label="Choose a mode" tabindex="-1">
     <a class="card" href="paper.html" aria-labelledby="paperName" aria-describedby="paperDescription">
