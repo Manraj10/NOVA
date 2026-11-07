@@ -26,8 +26,6 @@
 - **Memory:** Gemini turns the spoken memory into a scene, Gemini 3.1 Flash Image paints the 360° panorama, Lyria adds music when you name some, and three.js puts you inside it (`public/memory/`, `lib/memory.js`).
 - A dependency-free Node server (`server.js`) serves it locally and on Vercel (`api/index.js`).
 
-Trace was started before NOVA, which the rules allow. Around me, Memory, the shared "Hey Nib" voice layer and the hands-free flow were built at NOVA.
-
 ## Run it locally
 
 Needs Node 20 or newer.
