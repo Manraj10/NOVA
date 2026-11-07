@@ -7,9 +7,9 @@ const MENU = 'You are on Nib Home. Say Trace for paper, Around me, or Memory. Sa
 const MEMORY_PENDING = 'Memory is being connected. You are still on Nib Home. Choose Trace or Around me for now.';
 const memoryReady = document.documentElement?.dataset.memoryReady === 'true';
 const ROUTES = {
-  paper: ['paper.html', 'Opening Trace. When it loads, tap anywhere to start.'],
-  around: ['around.html', 'Opening Around me. When it loads, tap anywhere to start.'],
-  memory: ['memory.html', 'Opening Memory. When it loads, tap to speak or type.'],
+  paper: ['paper.html', 'Opening Trace.'],
+  around: ['around.html', 'Opening Around me.'],
+  memory: ['memory.html', 'Opening Memory.'],
 };
 const live = document.getElementById('live');
 const listen = document.getElementById('listen');

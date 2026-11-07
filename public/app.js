@@ -47,7 +47,7 @@ const T = {
     here: l => `You're on ${l}.`,
     firstOne: 'This is the first one.',
     offline: 'I can answer that once a model key is added.',
-    nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
+    nothingToFill: title => `${title && !/^(none|null|untitled|unknown)\.?$/i.test(title) ? `${title}. ` : ''}There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
     takeYou: "I'll take you there.",
     notClear: "I can't see that line clearly. Lift both hands off the page, then tap to read it again.",
     noLock: "I can't lock onto this page, so keep it still while we fill it in.",

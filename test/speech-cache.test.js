@@ -92,10 +92,17 @@ test('canonical Unicode and whitespace equivalents pass the full transport', asy
   assert.equal(requests.length, before + 1);
 });
 
-test('prose punctuation changes use system-voice fallback rather than broad token equivalence', async () => {
+// Event-day decision: a plain-word line (no digits or symbols) keeps the natural voice when only capitals or
+// prose punctuation differ; the robot fallback for "Opening Around me." read as robotic. Numbers stay strict above.
+test('plain-word punctuation changes keep the natural voice; numbers do not', async () => {
   transcript = 'Move up';
-  const before = requests.length;
-  await assert.rejects(speak({ text: 'Move up.', lang: 'en' }), e => e.status === 502);
+  let before = requests.length;
+  const clip = await speak({ text: 'Move up.', lang: 'en' });
+  assert.ok(clip.pcm.length > 1000);
+  assert.equal(requests.length, before + 1);
+  transcript = 'Move up 5';
+  before = requests.length;
+  await assert.rejects(speak({ text: 'Move up 5.', lang: 'en' }), e => e.status === 502);
   assert.equal(requests.length, before + 2);
 });
 
