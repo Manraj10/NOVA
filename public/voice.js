@@ -70,7 +70,7 @@ export const voice = {
   // Audio and speech only start after a user gesture.
   unlock() {
     this.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
-    this.ctx.resume?.();
+    this.ctx.resume?.()?.catch?.(() => {}); // autoplay refusal is handled by the caller's tap fallback
     try { if (navigator.audioSession) navigator.audioSession.type = this.micOpen ? 'play-and-record' : 'playback'; } catch { /* Safari 16.4+ only */ }
     if (!this.unlocked) {
       // iOS only lets speech start from inside a tap: speak a silent line now, before any await.

@@ -16,6 +16,14 @@ async function fixture() {
 
 const bareWakes = ['Nib', 'Hey Nib', 'HeyNib', ' NIB! ', 'Hey, Nib?', 'Nib,',
   'Hay Mib', 'Nim', 'Hey Ned', 'Nid', 'Neeb', 'Nibe', 'Nieb', 'Nibh'];
+
+test('an autoplay resume rejection does not escape the voice unlock path', async () => {
+  const h = loadVoice(file, { resumeReject: true, audioState: 'suspended' });
+  h.voice.unlock();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.voice.ctx.state, 'suspended');
+  assert.equal(h.requests.length, 0);
+});
 for (const phase of ['speaking', 'tail']) {
   test(`native ${phase}: exact bare wake spellings open a fresh question window`, async () => {
     const h = await fixture();
