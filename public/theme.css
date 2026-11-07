@@ -1,0 +1,79 @@
+/* Shared surface finish. Camera, document, canvas and 360° geometry stay owned
+   by their mode; this file changes only chrome, type and interaction states. */
+:root {
+  color-scheme: dark;
+  --bg: #050608;
+  --elev-1: #11161c;
+  --elev-2: #1b222b;
+  --label: #f6f7fa;
+  --label-2: #bfc5cf;
+  --label-3: #a0a8b6;
+  --tint: #ffdf55;
+  --glass: rgba(13, 17, 23, .9);
+  --hair: #313946;
+  --glass-hi: rgba(210, 224, 255, .19);
+  --nib-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+body { background-color: var(--bg); }
+:focus-visible { outline: 3px solid var(--tint); outline-offset: 5px; }
+.glass {
+  background: linear-gradient(145deg, rgba(27, 33, 43, .93), rgba(9, 12, 17, .93));
+  border-color: var(--glass-hi);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 #ffffff0d, 0 16px 48px #0008;
+}
+.quiet-button, a.back, .mode-link { transition: border-color .18s, background-color .18s; }
+.quiet-button { background: #ffffff04; border-color: var(--hair); }
+.cta:not(p), .primary, .action, .mic {
+  box-shadow: inset 0 1px 0 #ffffff59, 0 5px 28px #ffdf5515;
+}
+.mode-eyebrow, .eyebrow, .mode-number, .page-label { font-family: var(--nib-mono); }
+.mode-eyebrow, .eyebrow { letter-spacing: .09em; }
+.nib-hub {
+  background: radial-gradient(ellipse at 78% -10%, #e3ba2219, transparent 45%),
+    radial-gradient(ellipse at 0% 70%, #536e9c12, transparent 45%), var(--bg);
+}
+.nib-hub .site-header { border-bottom: 1px solid #d2e0ff17; }
+.nib-hub .hero { position: relative; }
+.nib-hub .hero-copy { gap: 18px; }
+.signal-label {
+  display: inline-flex; align-items: center; gap: 9px; margin: 0;
+  color: var(--label-2); font: 500 12px/1.5 var(--nib-mono);
+  letter-spacing: .09em; text-transform: uppercase;
+}
+.signal-label span { width: 6px; height: 6px; border-radius: 50%; background: var(--tint); box-shadow: 0 0 14px #ffdf5559; }
+.nib-hub h1 > span { color: var(--tint); }
+.nib-hub .card {
+  border-radius: 22px;
+  background: linear-gradient(145deg, #161b23, #090c11 80%);
+  border-color: #323b48;
+  box-shadow: inset 0 1px 0 #ffffff0b, 0 10px 28px #0003;
+}
+.nib-hub .card::after {
+  content: ""; position: absolute; inset: auto 28px 0; height: 1px;
+  background: linear-gradient(90deg, transparent, #ffdf5555, transparent);
+}
+.nib-hub .card-mark { padding-bottom: 18px; border-bottom: 1px solid #d2e0ff17; }
+.nib-hub .say { color: #d9deea; font-family: var(--nib-mono); font-size: 12px; }
+.nib-hub .card-arrow { color: var(--tint); stroke: currentColor; }
+.nib-hub .voice-status { border-left: 2px solid var(--tint); padding-left: 14px; }
+.start-screen .start-shell, .start .intro { color: var(--label); }
+.start-screen .demo-paper { box-shadow: 0 0 0 1px #ffffff12, 0 28px 90px #0009; }
+@media (hover: hover) {
+  .nib-hub .card:hover { border-color: #ffdf55a6; background: linear-gradient(145deg, #22262c, #0d1016 80%); }
+  .quiet-button:hover { border-color: #758094; background: #ffffff0a; }
+}
+@media (max-width: 700px) {
+  .nib-hub .hero-copy { gap: 10px; }
+  .signal-label { font-size: 10px; letter-spacing: .07em; }
+  .nib-hub .card-mark { border: 0; padding: 0; }
+  .nib-hub .card::after { inset-inline: 16px; }
+  .nib-hub .card { border-radius: 18px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: #10151c; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

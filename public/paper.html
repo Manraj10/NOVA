@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Nib · Paper</title>
+  <title>Nib · Trace</title>
   <meta name="description" content="A screen reader for paper. Nib reads a form aloud, guides your fingertip to a blank, and reads your writing back for you to check.">
   <meta name="theme-color" content="#000000">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -11,13 +11,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=Caveat:wght@600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="theme.css">
 </head>
 <body>
-  <a class="skip-link" href="#app">Skip to Paper</a>
+  <a class="skip-link" href="#app">Skip to Trace</a>
   <!-- The live page, blurred, fills the window behind the glass. -->
   <div class="ambient" id="ambient" aria-hidden="true"></div>
 
-  <main id="app" data-screen="start" data-mode="start" aria-label="Paper" tabindex="-1">
+  <main id="app" data-screen="start" data-mode="start" aria-label="Trace paper guidance" tabindex="-1">
     <header class="bar glass">
       <a class="brand" href="./" aria-label="Nib home"><span class="app-icon" aria-hidden="true"></span><span class="wordmark">Nib</span><span class="home-label">Home</span></a>
       <div class="doc-context">
@@ -58,13 +59,13 @@
 
       <div class="start">
         <button class="start-hit" id="startBtn">Start reading a form</button>
-        <nav class="start-nav" aria-label="Paper navigation"><a class="start-home" href="./" aria-label="Nib home"><img src="icon.svg" alt="" width="34" height="34"><span class="wordmark">Nib</span><span class="home-label">Home</span></a><span>01 / Paper</span></nav>
+        <nav class="start-nav" aria-label="Trace navigation"><a class="start-home" href="./" aria-label="Nib home"><img src="icon.svg" alt="" width="34" height="34"><span class="wordmark">Nib</span><span class="home-label">Home</span></a><span>01 / Trace</span></nav>
         <div class="start-grid">
           <div class="start-body">
             <div class="alert" id="alert" role="alert" hidden><strong></strong><p></p></div>
-            <p class="mode-eyebrow">01 / Paper</p>
+            <p class="mode-eyebrow">01 / Trace · Paper guidance</p>
             <h1 class="hero">Your paper.<br>Your handwriting.</h1>
-            <p class="lede">Read a form, find a place to write, and hear your handwriting read back. You decide what to keep.</p>
+            <p class="lede">Follow the sound. Find the blank. Hear your handwriting read back. You decide what to keep.</p>
             <p class="cta" aria-hidden="true"><span class="tab">Start reading</span></p>
             <div class="controls">
               <div class="langs" role="group" aria-label="Language">

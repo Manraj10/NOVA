@@ -2,11 +2,11 @@
 import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
 
-const MENU = 'You are on Nib Home. Say Paper, Around me, or Memory. Say help to hear these choices again, or tap a card.';
-const MEMORY_PENDING = 'Memory is being connected. You are still on Nib Home. Choose Paper or Around me for now.';
+const MENU = 'You are on Nib Home. Say Trace for paper, Around me, or Memory. Say help to hear these choices again, or tap a card.';
+const MEMORY_PENDING = 'Memory is being connected. You are still on Nib Home. Choose Trace or Around me for now.';
 const memoryReady = document.documentElement?.dataset.memoryReady === 'true';
 const ROUTES = {
-  paper: ['paper.html', 'Opening Paper. When it loads, tap anywhere to start.'],
+  paper: ['paper.html', 'Opening Trace. When it loads, tap anywhere to start.'],
   around: ['around.html', 'Opening Around me. When it loads, tap anywhere to start.'],
   memory: ['memory.html', 'Opening Memory. When it loads, tap to speak or type.'],
 };
@@ -62,7 +62,7 @@ function handle(text, echoContext, token) {
     // spoken the next phrase. Order follow-ups by capture, not ASR delivery.
     wakeAt = token?.capturedAt ?? performance.now(); wakeUntil = performance.now() + 8000;
     wakeAfter = token?.sequence ?? captureSequence;
-    state('I’m listening. Say Paper, Around me, Memory, or help.', !!ears?.stream);
+    state('I’m listening. Say Trace, Around me, Memory, or help.', !!ears?.stream);
     voice.earcon(true);
     return 'listening';
   }
@@ -76,7 +76,7 @@ function start() {
   voice.unlock();
   voice.say(MENU);
   if (starting) return starting;
-  if (ears?.stream) { state('Listening. Say Paper, Around me, Memory, or help.', true); return Promise.resolve(); }
+  if (ears?.stream) { state('Listening. Say Trace, Around me, Memory, or help.', true); return Promise.resolve(); }
   if (!navigator.mediaDevices?.getUserMedia) {
     voice.micOpen = false;
     state('Voice input is unavailable here. Choose a mode below, or use keys 1, 2, or 3.');
@@ -100,7 +100,7 @@ function start() {
       await candidate.start(mic);
       if (leaving || owner !== generation) { candidate.stop(); releaseMic(); return; }
       ears = candidate;
-      state('Listening. Say Paper, Around me, Memory, or help.', true);
+      state('Listening. Say Trace, Around me, Memory, or help.', true);
     } catch {
       candidate.stop(); releaseMic(); ears = null; voice.micOpen = false;
       state('Microphone unavailable. Choose a mode below, or use keys 1, 2, or 3.');

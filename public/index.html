@@ -10,8 +10,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="home.css">
+<link rel="stylesheet" href="theme.css">
 </head>
-<body>
+<body class="nib-hub">
 <a class="skip-link" href="#modeChoices">Skip to modes</a>
 <header class="site-header">
   <a class="brand-home" href="./" aria-label="Nib home" aria-current="page"><img src="icon.svg" alt="" width="34" height="34"><span class="brand-name">Nib</span><span class="home-label">Home</span></a>
@@ -20,29 +21,30 @@
 <main id="home" aria-labelledby="title">
   <section class="hero" aria-labelledby="title">
     <div class="hero-copy">
-      <h1 id="title">Your world.<br>Out loud.</h1>
+      <p class="signal-label"><span aria-hidden="true"></span>Three ways in. One voice.</p>
+      <h1 id="title">Your world.<br><span>Out loud.</span></h1>
       <p class="tag">Read a form. Hear what’s nearby.<br>Recreate a place from memory.</p>
     </div>
-    <button id="listen" class="cta" type="button" aria-label="Choose a mode by voice. Tap to hear the menu.">Tap to choose by voice</button>
+    <button id="listen" class="cta" type="button" aria-label="Enable voice control. Tap once, allow the microphone, then say Hey Nib or Nib.">Tap to enable Nib</button>
   </section>
   <nav id="modeChoices" class="cards" aria-label="Choose a mode" tabindex="-1">
     <a class="card" href="paper.html" aria-labelledby="paperName" aria-describedby="paperDescription">
       <div class="card-mark" aria-hidden="true"><span class="mode-number">01</span><svg class="glyph" viewBox="0 0 48 48"><path d="M13 6h16l8 8v28H13z"/><path d="M29 6v8h8M19 23h12M19 30h12M19 37h7"/></svg></div>
-      <div class="card-copy"><h2 id="paperName">Paper</h2><p id="paperDescription">Read a form. Write with guidance.</p><span class="say">Say “Paper”</span></div>
+      <div class="card-copy"><h2 id="paperName">Trace</h2><p id="paperDescription">Your paper. Guided by sound.</p><span class="say">Say “Nib, open Trace”</span></div>
       <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
     </a>
     <a class="card" href="around.html" aria-labelledby="aroundName" aria-describedby="aroundDescription">
       <div class="card-mark" aria-hidden="true"><span class="mode-number">02</span><svg class="glyph" viewBox="0 0 48 48"><circle cx="24" cy="24" r="4"/><path d="M14 14a14 14 0 0 0 0 20M34 14a14 14 0 0 1 0 20M8 8a22 22 0 0 0 0 32M40 8a22 22 0 0 1 0 32"/></svg></div>
-      <div class="card-copy"><h2 id="aroundName">Around me</h2><p id="aroundDescription">Hear the people and things nearby.</p><span class="say">Say “Around me”</span></div>
+      <div class="card-copy"><h2 id="aroundName">Around me</h2><p id="aroundDescription">Hear what’s in front of you.</p><span class="say">Say “Nib, open Around me”</span></div>
       <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
     </a>
     <a class="card" href="memory.html" aria-labelledby="memoryName" aria-describedby="memoryDescription">
       <div class="card-mark" aria-hidden="true"><span class="mode-number">03</span><svg class="glyph" viewBox="0 0 48 48"><path d="M6 22 24 8l18 14M11 18v22h26V18"/><path d="M20 40V29h8v11"/></svg></div>
-      <div class="card-copy"><h2 id="memoryName">Memory</h2><p id="memoryDescription">Turn your words into a 360° room.</p><span class="say">Say “Memory”</span></div>
+      <div class="card-copy"><h2 id="memoryName">Memory</h2><p id="memoryDescription">A world from your words.</p><span class="say">Say “Nib, open Memory”</span></div>
       <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
     </a>
   </nav>
-  <p class="fine">Three ways to explore, understand, and share your world.<br>Keyboard: 1 for Paper, 2 for Around me, 3 for Memory.</p>
+  <p class="fine">Tap once and allow the microphone. Then say “Hey Nib” or “Nib.”<br>Keyboard: 1 for Trace, 2 for Around me, 3 for Memory. “Paper” still works.</p>
   <p id="live" class="voice-status" role="status" aria-live="off" aria-atomic="true"></p>
 </main>
 <script type="module" src="home.js"></script>
