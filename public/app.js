@@ -851,6 +851,7 @@ function found(f) {
 }
 
 function arrive(f) {
+  const ep = S.epoch, index = S.i;
   setMode('write');
   S.onTarget = false;
   S.burstPt = anchorOf(f);
@@ -860,8 +861,14 @@ function arrive(f) {
   const coached = S.fields.some(x => x.done && !x.skipped);
   const stop = S.stopSaid ? '' : `${t().stop} `;
   S.stopSaid = false;
-  say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${IOS ? t().coachTap : t().coach}`}`)
-    .then(() => { if (!coached && !S.sim && S.mode === 'write' && !S.rulerSaid) { S.rulerSaid = true; say(t().ruler, { soft: true }); } });
+  const coaching = say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${IOS ? t().coachTap : t().coach}`}`);
+  const speech = voice.seq;
+  coaching.then(() => {
+    if (!coached && !S.sim && S.mode === 'write' && !S.rulerSaid && !S.voicePaused && !app.dataset.talk
+      && ep === S.epoch && index === S.i && S.fields[index] === f && speech === voice.seq) {
+      S.rulerSaid = true; say(t().ruler, { soft: true });
+    }
+  });
   S.line = null; // a fresh blank: learn the writing height again
 }
 
@@ -1305,7 +1312,7 @@ function onVoiceCommand(cmd, rest) {
     voice.stop({ resumeEars: false });
     for (const ears of new Set([S.ears, S.earsPending])) ears?.stop();
     S.ears = null; S.earsPending = null;
-    const live = talk.live; talk.live = null;
+    const live = talk.live; talk.live = null; talk.context = null;
     try { Promise.resolve(live?.stop?.()).catch(() => {}); } catch { /* already stopped */ }
     for (const track of S.mic?.getTracks?.() || []) {
       try { track.stop(); } catch { /* capture already ended */ }
@@ -1432,6 +1439,7 @@ async function startEars() {
       return active;
     } catch (e) {
       ears.stop();
+      if (S.earsPending !== ears) return null;
       if (e?.name !== 'AbortError') {
         voice.micOpen = false;
         S.earsErr = e?.name || 'error';
@@ -1513,6 +1521,8 @@ function talkStart({ auto = false } = {}) {
   talk.live = voice.hear(words => showHeard(words), auto ? () => talkEnd() : null);
   if (!talk.live) return;
   S.earsPttGeneration = (S.earsPttGeneration || 0) + 1; // the ears drop anything captured before a hold-to-ask
+  talk.context = { epoch: S.epoch, mode: S.mode, index: S.i, field: S.fields[S.i], lang: S.lang,
+    ptt: S.earsPttGeneration, answer: S.answerSerial || 0, wake: S.awaitQContext };
   app.dataset.talk = 'listening';
   $('talk').setAttribute('aria-pressed', 'true');
   setCue('listen');
@@ -1526,14 +1536,28 @@ function talkStart({ auto = false } = {}) {
 async function talkEnd() {
   const live = talk.live;
   if (!live) return;
+  const context = talk.context;
   S.earsPttGeneration = (S.earsPttGeneration || 0) + 1;
+  const released = S.earsPttGeneration;
   talk.live = null;
   clearTimeout(talk.auto);
   $('talk').setAttribute('aria-pressed', 'false');
   voice.earcon(false);
   const q = await live.stop();
+  const sessionCurrent = context && talk.context === context && context.epoch === S.epoch && context.lang === S.lang
+    && context.ptt + 1 === released && released === S.earsPttGeneration
+    && context.answer === (S.answerSerial || 0) && context.wake === S.awaitQContext;
+  if (!sessionCurrent) return; // navigation, a new capture or a newer Ask owns its own UI
+  const destination = voice.navigation?.(q);
+  if (destination) { talk.context = null; return onVoiceCommand('nav', destination); }
+  talk.context = null;
+  if (context.mode !== S.mode || context.index !== S.i || context.field !== S.fields[S.i]) {
+    if (app.dataset.talk === 'listening') talkDone();
+    return; // an old writing utterance can never Keep a later readback
+  }
   if (!q) { talkDone(); return say(t().heardNothing); }
-  await answer(q);
+  const question = voice.wake?.(q)?.rest ?? q;
+  await onVoiceCommand('ask', question);
 }
 
 function talkDone() {
