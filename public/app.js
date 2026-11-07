@@ -26,7 +26,11 @@ const T = {
     lift: 'Lift your hand so I can read it.',
     wrote: t => `You wrote ${t}.`,
     blank: 'That spot still looks empty.',
-    all: n => `All done. ${n} ${n === 1 ? 'field' : 'fields'} filled. You can hand the form in.`,
+    all: n => `All done. ${n} ${n === 1 ? 'field' : 'fields'} filled.`,
+    handIn: 'You can hand the form in.',
+    skipped: l => `You skipped ${l}.`,
+    review: l => `I couldn't read ${l} clearly. Ask me to go back to it if you want to redo it.`,
+    unsure: "I'll flag that one so you can check it at the end.",
     noHand: "I can't see your hand. Rest one finger on the page.",
     noCamera: 'Nib needs the camera to see the form. Allow camera access for this page, then reload.',
     askHint: 'Hold the screen to ask me anything.',
@@ -49,7 +53,11 @@ const T = {
     lift: 'Levanta la mano para que pueda leerlo.',
     wrote: t => `Escribiste ${t}.`,
     blank: 'Ese espacio todavía parece vacío.',
-    all: n => `Listo. ${n} campos llenos. Ya puedes entregar el formulario.`,
+    all: n => `Listo. ${n} ${n === 1 ? 'campo lleno' : 'campos llenos'}.`,
+    handIn: 'Ya puedes entregar el formulario.',
+    skipped: l => `Saltaste ${l}.`,
+    review: l => `No pude leer bien ${l}. Pídeme volver a ese campo si quieres rehacerlo.`,
+    unsure: 'Lo marco para que lo revises al final.',
     noHand: 'No veo tu mano. Apoya un dedo en la hoja.',
     noCamera: 'Nib necesita la cámara para ver el formulario. Permite el acceso a la cámara y recarga la página.',
     askHint: 'Mantén presionada la pantalla para preguntarme lo que sea.',
@@ -72,7 +80,11 @@ const T = {
     lift: 'हाथ हटाइए ताकि मैं पढ़ सकूँ।',
     wrote: t => `आपने लिखा: ${t}।`,
     blank: 'वह जगह अभी भी खाली लगती है।',
-    all: n => `हो गया। ${n} जगहें भरी गईं। अब आप फ़ॉर्म जमा कर सकते हैं।`,
+    all: n => `हो गया। ${n} जगहें भरी गईं।`,
+    handIn: 'अब आप फ़ॉर्म जमा कर सकते हैं।',
+    skipped: l => `आपने ${l} छोड़ दिया।`,
+    review: l => `मैं ${l} ठीक से नहीं पढ़ पाया। दोबारा भरना हो तो मुझसे उस पर वापस जाने को कहिए।`,
+    unsure: 'मैं इसे निशान लगा देता हूँ, ताकि आप आख़िर में जाँच सकें।',
     noHand: 'मुझे आपका हाथ नहीं दिख रहा। एक उंगली पन्ने पर रखिए।',
     noCamera: 'फ़ॉर्म देखने के लिए Nib को कैमरा चाहिए। कैमरे की अनुमति दीजिए और पेज फिर से खोलिए।',
     askHint: 'कुछ भी पूछने के लिए स्क्रीन दबाकर रखिए।',
@@ -95,7 +107,11 @@ const T = {
     lift: '请把手移开，让我看一下。',
     wrote: t => `你写的是：${t}。`,
     blank: '这里看起来还是空的。',
-    all: n => `全部完成，填了 ${n} 处。可以交表了。`,
+    all: n => `全部完成，填了 ${n} 处。`,
+    handIn: '可以交表了。',
+    skipped: l => `你跳过了：${l}。`,
+    review: l => `${l} 我没看清。想重写的话，让我回到那一处。`,
+    unsure: '我先标记一下，最后提醒你检查。',
     noHand: '我看不到你的手。请把一根手指放在纸上。',
     noCamera: 'Nib 需要摄像头才能看到表格。请允许使用摄像头，然后刷新页面。',
     askHint: '按住屏幕就可以问我任何问题。',
@@ -411,11 +427,12 @@ async function finishWriting() {
     }
     f.answer = out.text;
     f.legible = out.legible;
+    f.review = !out.legible; // unclear writing is never silently accepted: flagged, then listed at the end
     f.done = true;
     f.doneAt = performance.now();
     readback.result(out.text, out.legible);
     renderLists();
-    await say(out.spoken || t().wrote(f.answer));
+    await say(`${out.spoken || t().wrote(f.answer)}${f.review ? ` ${t().unsure}` : ''}`);
   } catch (e) {
     readback.hide();
     setMode('write');
@@ -450,12 +467,15 @@ function expand(f) {
   return { x0: f.x0 - 0.03, x1: f.x1 + 0.03, y0: f.y0 - Math.max(h, 0.05), y1: f.y1 + Math.max(h * 0.25, 0.008) };
 }
 
+// The next field still to fill: after this one first, then wrap around to any left earlier (after a jump).
 function next() {
-  const n = S.fields.findIndex((f, k) => k > S.i && !f.done);
-  if (n === -1) return finish();
+  const pending = S.fields.map((f, k) => k).filter(k => !S.fields[k].done);
+  const n = pending.find(k => k > S.i) ?? pending[0];
+  if (n === undefined) return finish();
   activate(n);
 }
 
+// Says what was filled, skipped and flagged. "Hand it in" only when nothing needs another look.
 function finish() {
   S.finishedAt = performance.now();
   const s = Math.round((S.finishedAt - S.startedAt) / 1000);
@@ -464,8 +484,15 @@ function finish() {
   setCue('done');
   renderLists();
   buzz([60, 60, 60, 60, 160]);
-  const filled = S.fields.filter(f => f.done && !f.skipped).length;
-  say(t().all(filled));
+  const filled = S.fields.filter(f => f.done && !f.skipped);
+  const skipped = S.fields.filter(f => f.skipped).map(f => f.label);
+  const review = filled.filter(f => f.review).map(f => f.label);
+  say([
+    t().all(filled.length),
+    skipped.length && t().skipped(skipped.join(', ')),
+    review.length && t().review(review.join(', ')),
+    !skipped.length && !review.length && t().handIn,
+  ].filter(Boolean).join(' '));
 }
 
 function skip() {
@@ -493,7 +520,7 @@ function primary() {
 function goTo(k) {
   const f = S.fields[k];
   if (!f || ['start', 'reading', 'reveal', 'check'].includes(S.mode)) return;
-  Object.assign(f, { done: false, skipped: false, answer: '' });
+  Object.assign(f, { done: false, skipped: false, review: false, answer: '' });
   readback.hide();
   activate(k);
 }
@@ -608,7 +635,12 @@ function act(out) {
     case 'goto': if (out.field >= 0 && out.field < S.fields.length) return goTo(out.field); break;
     case 'repeat': return repeat();
     case 'reread': return again();
-    case 'language': setLang(out.lang); break;
+    case 'language':
+      setLang(out.lang);
+      // Re-read the page so the field names come back in the new language. The parse prompt skips
+      // blanks that are already filled in, so only what is left gets listed.
+      if (S.fields.length && ['idle', 'guide', 'write', 'done'].includes(S.mode)) return say(out.say).then(readForm);
+      break;
   }
   return say(out.say);
 }
@@ -675,7 +707,7 @@ function renderLists() {
     else li.style.animation = 'none';
     const n = document.createElement('span');
     n.className = 'n';
-    n.textContent = f.done && !f.skipped ? '✓' : k + 1;
+    n.textContent = f.review ? '?' : f.done && !f.skipped ? '✓' : k + 1;
     const body = document.createElement('div');
     body.className = 'f-body';
     const label = document.createElement('span');
@@ -683,7 +715,7 @@ function renderLists() {
     label.textContent = f.label;
     const kind = document.createElement('span');
     kind.className = 'f-kind';
-    kind.textContent = f.skipped ? 'Skipped' : KIND[f.kind] || 'Write';
+    kind.textContent = f.skipped ? 'Skipped' : f.review ? 'Check this' : KIND[f.kind] || 'Write';
     body.append(label, kind);
     if (f.answer) {
       const a = document.createElement('span');
