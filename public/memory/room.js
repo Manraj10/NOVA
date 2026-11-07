@@ -16,17 +16,23 @@ export function warmDepth() {
     throw new Error('No depth model');
   })());
 }
-// Depth for the loop, wrapped so the 360 seam has no jump.
-export async function depthOf(loop, onStatus = () => {}) {
+// Depth for the loop, wrapped so the 360 seam has no jump. Runs one at a time.
+let queue = Promise.resolve();
+export function depthOf(loop, onStatus) {
+  const run = queue.then(() => depthNow(loop, onStatus));
+  queue = run.catch(() => {});
+  return run;
+}
+async function depthNow(loop, onStatus = () => {}) {
   const { RawImage } = await lib();
   await warmDepth();
   onStatus();
   const run = async img => { try { return await estimator(img); } catch (e) { console.warn('depth run failed, retrying on wasm', e); estimator = await make('wasm'); return estimator(img); } };
-  const L = loop.width, h = loop.height, pad = Math.round(L * 0.1);
+  const k0 = Math.min(1, 1400 / (loop.width * 1.2)), L = Math.round(loop.width * k0), h = Math.round(loop.height * k0), pad = Math.round(L * 0.1);
   const c = Object.assign(document.createElement('canvas'), { width: L + 2 * pad, height: h }), x = c.getContext('2d');
-  x.drawImage(loop, L - pad, 0, pad, h, 0, 0, pad, h);
-  x.drawImage(loop, pad, 0);
-  x.drawImage(loop, 0, 0, pad, h, L + pad, 0, pad, h);
+  x.drawImage(loop, loop.width - pad / k0, 0, pad / k0, loop.height, 0, 0, pad, h);
+  x.drawImage(loop, pad, 0, L, h);
+  x.drawImage(loop, 0, 0, pad / k0, loop.height, L + pad, 0, pad, h);
   const { depth } = await run(await RawImage.fromCanvas(c));
   // crop the padding back off into a plain gray canvas we can save and reuse
   const k = depth.width / c.width, out = Object.assign(document.createElement('canvas'), { width: Math.round(L * k), height: depth.height });
@@ -55,14 +61,11 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
   function useDepth(d) {
     if (!d) return;
     const dw = d.width, dh = d.height, dd = d.getContext('2d').getImageData(0, 0, dw, dh).data;
-    dAt = (u, vb) => {
-      let s = 0;
-      for (let a = -3; a <= 3; a++) for (let b = -3; b <= 3; b++) {
-        const i = ((Math.floor(u * dw) + a) % dw + dw) % dw, j = Math.max(0, Math.min(dh - 1, Math.floor(vb * dh) + b));
-        s += dd[(j * dw + i) * 4];
-      }
-      return s / 49 / 255;
-    };
+    const g = new Float32Array(dw * dh), t = new Float32Array(dw * dh);
+    for (let i = 0; i < g.length; i++) g[i] = dd[i * 4] / 255;
+    for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) { let s = 0; for (let a = -3; a <= 3; a++) s += g[y * dw + ((x + a) % dw + dw) % dw]; t[y * dw + x] = s / 7; }
+    for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) { let s = 0; for (let b = -3; b <= 3; b++) s += t[Math.max(0, Math.min(dh - 1, y + b)) * dw + x]; g[y * dw + x] = s / 7; }
+    dAt = (u, vb) => g[Math.max(0, Math.min(dh - 1, Math.floor(vb * dh))) * dw + ((Math.floor(u * dw) % dw) + dw) % dw];
     // the band's average depth, used toward the poles
     avg = 0; for (let i = 0; i < 64; i++) avg += dAt(i / 64, 0.5) / 64;
   }
@@ -156,7 +159,19 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
   return {
     tags: placed,
     // the walls behind you were painted after the room opened: swap the picture in place
-    setPano(canvas) { tex.image = canvas; tex.needsUpdate = true; },
+    setPano(next) {
+      // cross-fade the new picture in over ~0.8 s (eight texture updates), not a pop
+      const old = tex.image, work = Object.assign(document.createElement('canvas'), { width: next.width, height: next.height }), wx = work.getContext('2d');
+      let k = 0;
+      const step = () => {
+        k++;
+        wx.globalAlpha = 1; wx.drawImage(old, 0, 0, next.width, next.height);
+        wx.globalAlpha = k / 8; wx.drawImage(next, 0, 0);
+        tex.image = k < 8 ? work : next; tex.needsUpdate = true;
+        if (k < 8) setTimeout(step, 100);
+      };
+      step();
+    },
     // depth arrived after the room opened: glide every wall and label to its real distance
     setDepth(d) {
       useDepth(d);

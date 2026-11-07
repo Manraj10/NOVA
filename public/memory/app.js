@@ -1,15 +1,16 @@
-// Nib · Memory: say a room you remember; Nib asks a question or two, builds it all the way around you,
+// Nib · Memory: say a room you remember; Nib builds it all the way around you (no questions: it reads the
+// place, era and culture from the clues in your words),
 // tells you what's where, and changes it when you say it was different. Every detail is labeled
 // "from your words" or "imagined by Nib". The 3D view is for the family; the voice is for everyone.
 //
 // Voice is Nib's own (../voice.js, ../ears.js): the ears stay open after the first tap. "Nib" alone opens a
 // listening window; "Hey Nib, <words>" acts at once. Nib also opens the window itself right after it asks
-// something. Whatever is said in a window goes to the step that is active: the memory, the answer to a
-// question, or a change to the room. Short whole phrases are commands anywhere ("describe the room",
+// something. Whatever is said in a window goes to the step that is active: the memory, something to add
+// while it builds, or a change to the room. Short whole phrases are commands anywhere ("describe the room",
 // "show what's real", "start over", "home", "paper", "around me").
 import { voice } from '../voice.js';
 import { makeEars } from '../ears.js';
-import { load, shrink, stripInput, makeLoop, equirect } from './pano.js';
+import { load, shrink, stripInput, makeLoop, equirect, placeholderBack } from './pano.js';
 import { depthOf, makeRoom, warmDepth } from './room.js';
 
 const $ = id => document.getElementById(id);
@@ -38,6 +39,9 @@ const L = {
   confirm: 'Is that how you remember it? Tell me anything to change.',
   almost: 'Almost there.',
   added: 'Got it. I’ll add that.',
+  glad: 'I’m glad. Look around as long as you like. Say Nib if you want to change anything.',
+  what: 'What should be different?',
+  noMic: 'I can’t hear you. Allow the microphone for this page, then tap the screen. You can also type.',
   changing: 'Okay. Changing the whole room. About twenty seconds.',
   done: 'Done.',
   fail: 'I couldn’t change it that time. Say it again.',
@@ -66,7 +70,8 @@ function startEars() {
   ears.start().catch(() => {
     ears = null; micDenied = true; voice.micOpen = false;
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
-    $('note1').textContent = 'The microphone is blocked. You can type instead.';
+    voice.say(L.noMic);
+    setTimeout(() => { micDenied = false; }, 4000); // a later tap may ask again
   });
 }
 
@@ -77,6 +82,7 @@ function begin() {
   $('start').hidden = true;
   startEars();
   warmDepth().catch(() => {});
+  openWindow(30000, false);
   voice.say(L.greet).then(() => { if (step === 'home' && !collected) openWindow(25000, false); });
 }
 addEventListener('click', begin, { capture: true }); // click (not pointerdown): iOS only unlocks audio on a real activation
@@ -94,7 +100,7 @@ function openWindow(ms = 9000, cue = true) {
 
 // The ears hear "Nib" many ways; "hey" alone also opens a window, as Manraj asked.
 const fixWake = t => t
-  .replace(/^\s*(hey|hi|ok|okay|a|hay)[\s,]+(nim|neeb|nibe|nibh|knee|nieb|nibble|ned|need|nab|nick|nit|nibb?ed|nebb?|knib|nip|neb|nibs|knob|nib)\b[,.!?]*/i, 'Hey Nib, ')
+  .replace(/^\s*(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nim|neeb|nibe|nibh|nieb|knib|neb)\b[,.!?]*/i, 'Hey Nib, ')
   .replace(/^\s*(hey|hi|hay)( there)?[\s,.!?]*$/i, 'Nib')
   .replace(/^Hey Nib,\s*$/, 'Nib');
 
@@ -108,7 +114,10 @@ function heard(text, { typed = false } = {}) {
   if (wake) {
     if (!wake.rest) { voice.stop(); return openWindow(); }
     words = wake.rest;
-  } else if (!typed && performance.now() > windowUntil && !collected) return; // not meant for Nib
+  } else if (!typed && performance.now() > windowUntil && !collected) {
+    if (voice.speaking && /^(stop|quiet|be quiet|pause|shh+|hush)$/.test(norm(words))) { voice.stop(); openWindow(); }
+    return; // not meant for Nib
+  }
   const cmd = command(norm(words));
   if (cmd) { collected = ''; windowUntil = 0; return cmd(); }
   if (typed) return commit(words);
@@ -134,7 +143,10 @@ function command(t) {
   if (/^(start over|start again|new (memory|room)|begin again|restart)$/.test(t)) return startOver;
   if (/^(try again|again)$/.test(t) && retry) return () => retry();
   if (step === 'home' && /^(try|open|show me) the example$|^example$/.test(t)) return () => openExample();
+  if (step === 'building' && /^(is it (ready|done)|how long|are you done|whats happening)$/.test(t)) return () => voice.say(L.almost);
   if (step !== 'room') return null;
+  if (/^(yes|yeah|yep|yup|yes it is|thats (right|it)|perfect|correct|exactly|thanks|thank you|ok|okay|good|great|nice|beautiful|wow|its perfect)$/.test(t)) return () => voice.say(L.glad).then(() => openWindow(6000, false));
+  if (/^(no|nope|not quite|not really|thats wrong|wrong|its wrong)$/.test(t)) return () => voice.say(L.what).then(() => openWindow(14000));
   if (/^(describe( the room| it)?|what(s| is) (here|around me|in the room)|where am i|tell me again|repeat( that)?|say (that|it) again)$/.test(t)) return describeAgain;
   if (/^(show (me )?what(s| is) real|what(s| is) real|show (the )?labels)$/.test(t)) return () => real(true, true);
   if (/^hide (the )?labels$/.test(t)) return () => real(false);
@@ -163,7 +175,7 @@ function bindTalk(btn) {
 setInterval(() => {
   const open = performance.now() < windowUntil || !!collected;
   for (const id of ['mic1', 'mic2', 'mic3']) { $(id).classList.toggle('live', open); $(id).setAttribute('aria-pressed', String(open)); }
-  if (screen() === 'home' && open && !voice.speaking) $('note1').textContent = collected ? `“${collected}”` : 'Listening…';
+  if (screen() === 'home' && open && !voice.speaking && ears) $('note1').textContent = collected ? `“${collected}”` : 'Listening…';
   if (music) music.gain.gain.setTargetAtTime(muted ? 0 : voice.speaking || open ? 0.18 : 0.8, ctx().currentTime, 0.25);
 }, 200);
 
@@ -182,7 +194,7 @@ function bubble(who, text) {
   return li;
 }
 function startOver() {
-  run++; later = []; retry = null; collected = ''; current = null;
+  run++; later = []; retry = null; collected = ''; current = null; changing = false; changeTok++;
   soundTok++; music?.stop(); music = null; view?.tiltOff();
   step = 'home';
   show('home');
@@ -224,12 +236,13 @@ function steps() {
 
 async function build(memory, me) {
   step = 'building';
+  let nudge;
   const st = steps(), tick = setInterval(st.tick, 250);
   try {
     // the front is built straight from the words while the scene plan (what is where, which details are
     // theirs) is worked out alongside; the plan feeds the walls behind you, the labels and the sound
     const said = memory;
-    const nudge = setTimeout(() => { if (me === run && step === 'building' && !voice.speaking) voice.say(L.almost); }, 17000);
+    nudge = setTimeout(() => { if (me === run && step === 'building' && !voice.speaking) voice.say(L.almost); }, 17000);
     st.go('spec'); st.go('scene');
     const specP = api('spec', { memory }).catch(() => ({ memory: said, front_prompt: said, back_prompt: '', spoken: [], sound_prompt: said })).then(s => (st.done('spec'), s));
     const frontP = api('scene', { memory: said }).then(r => load(r.image));
@@ -250,15 +263,15 @@ async function build(memory, me) {
     const backP = paintBack(front, spec);
     const lab = await labelsP;
     if (me !== run) return clearInterval(tick);
-    const { loop: loop0, L: len, s, w } = makeLoop(front, await load(stripInput(front)));
+    const { loop: loop0, L: len, s, w } = makeLoop(front, placeholderBack(front));
     const room = {
       spec, front, back: null, frontJpg, pano: equirect(loop0), depth: null,
       title: lab?.title || spec.title || 'Your room', narration: lab?.narration || '', describe: lab?.describe || '',
-      tags: tagsFrom(lab, { L: len, s, w }), faceU: (w / 2 - s) / len, sound: null,
+      tags: tagsFrom(lab, { L: len, s, w }), faceU: (w / 2 - s) / len, sound: null, sid: me,
     };
     clearTimeout(nudge);
     fillBehind(room, front, backP, st);
-    soundP.then(snd => { if (!snd) return; room.sound = snd; if (current === room) startSound(room); else if (current?.spec === room.spec) { current.sound = snd; startSound(current); } });
+    soundP.then(snd => { if (!snd) return; room.sound = snd; if (current === room) startSound(room); else if (current?.sid === room.sid) { current.sound = snd; startSound(current); } });
     room.soundFrom = room.tags.find(t => lab?.sound_from && t.name === lab.sound_from) || null;
     clearInterval(tick);
     if (me !== run) return;
@@ -266,7 +279,7 @@ async function build(memory, me) {
     window.__lastRoom = room;
     enter(room);
   } catch (e) {
-    clearInterval(tick);
+    clearInterval(tick); clearTimeout(nudge);
     console.warn(e);
     if (me !== run) return;
     retry = () => { retry = null; li.onclick = null; build(memory, ++run); };
@@ -352,15 +365,19 @@ async function enter(room, { changed = false } = {}) {
   else placeSound(room);
   await sleep(changed ? 100 : 900);
   if (current !== room) return;
-  const lines = [...(changed ? [L.done] : room.narration ? [room.narration] : []), ...sentences(room.describe), L.confirm];
+  const lines = [...(changed ? [L.done] : room.narration ? [room.narration] : []), ...sentences(room.describe)];
   if (later.length) { const t = later.join('. '); later = []; return change(t); }
-  const finished = await sayLines(lines);
-  if (finished && current === room && step === 'room') openWindow(10000);
+  if (await sayLines(lines) && current === room && step === 'room') confirmAndListen();
 }
 
 function describeAgain() {
   if (!current) return;
-  sayLines([...sentences(current.describe), L.confirm]).then(done => { if (done && step === 'room') openWindow(10000); });
+  const room = current;
+  sayLines(sentences(room.describe)).then(done => { if (done && current === room) confirmAndListen(); });
+}
+function confirmAndListen() {
+  openWindow(16000, false);
+  voice.say(L.confirm).then(() => { if (step === 'room') openWindow(12000); });
 }
 
 let muted = false, soundTok = 0;
@@ -431,13 +448,14 @@ $('tagsheet').onclick = e => {
 $('stage').addEventListener('pointerdown', () => { $('tagsheet').hidden = true; });
 
 // ---------- "No, the radio was by the window": change the room by voice ----------
-let changing = false;
+let changing = false, changeTok = 0;
 async function change(text) {
   const room = current;
   if (!room) return;
   if (changing) { later.push(text); return voice.say(L.added); } // one change at a time; the next follows
   if (!room.front) return voice.say(L.fixExample);
   changing = true;
+  const tok = ++changeTok;
   voice.say(L.changing);
   const t0 = performance.now(), tick = setInterval(() => { if (current === room) $('caption').textContent = `Changing the whole room: “${text}” · ${Math.round((performance.now() - t0) / 1000)} s`; }, 250);
   try {
@@ -450,7 +468,7 @@ async function change(text) {
     const labP = api('labels', { scene: frontJpg, spec }).catch(() => null);
     const backP = paintBack(front, spec).catch(() => room.back);
     const lab = await labP;
-    const { loop, L: len, s, w } = makeLoop(front, room.back || await load(stripInput(front)));
+    const { loop, L: len, s, w } = makeLoop(front, placeholderBack(front));
     clearInterval(tick);
     const next = {
       ...room, spec, front, frontJpg, pano: equirect(loop), depth: room.depth, clips: null,
@@ -465,7 +483,8 @@ async function change(text) {
     fillBehind(next, front, backP);
   } catch (e) {
     clearInterval(tick);
-    changing = false;
+    if (tok !== changeTok) return;
+    changing = false; later = [];
     console.warn(e);
     if (current !== room) return;
     voice.say(L.fail).then(() => openWindow(10000));
@@ -516,7 +535,7 @@ async function openExample() {
     const [pano, depthImg, front, back] = await Promise.all(['hero/pano.jpg', 'hero/depth.png', 'hero/front.jpg', 'hero/back.jpg'].map(u => load(u).catch(() => null)));
     const room = { ...meta, pano: toCanvas(pano), depth: depthImg && toCanvas(depthImg), sound: 'hero/sound.mp3', front, back, frontJpg: front && shrink(front, 1600, 0.88) };
     room.soundFrom = room.tags.find(t => t.name === meta.soundFromName) || null;
-    run++; later = []; collected = '';
+    run++; later = []; collected = ''; changing = false; changeTok++;
     enter(room);
   } catch (e) { console.warn(e); voice.say('The example isn’t ready yet.'); }
   $('example').textContent = 'Try the example';
