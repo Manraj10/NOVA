@@ -126,3 +126,5 @@ h1 { margin: 0; font-size: clamp(40px, 10vw, 76px); line-height: 1.02; letter-sp
 .start p { margin: 0; max-width: 32ch; color: var(--label-2); font-size: clamp(19px, 5vw, 24px); line-height: 1.4; text-wrap: pretty; }
 .start .fine { font-size: 15px; color: var(--label-3); }
 .cta { min-height: 60px; padding: 0 30px; border: 0; border-radius: 999px; background: var(--label); color: #000; font: 600 19px var(--font); cursor: pointer; }
+.room-row .pill { white-space: nowrap; padding: 0 14px; min-width: 0; }
+@media (max-width: 420px) { .room-row { gap: 8px; } .room-row .pill { font-size: 15px; } .stick { width: 56px; height: 56px; } .room-row .mic { width: 56px; height: 56px; } .room-row .back.round { width: 48px; height: 48px; } }
