@@ -107,6 +107,17 @@ test('back stays a local mode action rather than unexpectedly leaving Paper or M
   assert.deepEqual(h.commands, [['ask', 'go back']]);
 });
 
+test('teammate phone-observed wake spellings keep the same shared routing contract', () => {
+  const h = fixture();
+  for (const name of ['Mib', 'Nim', 'Neeb', 'Nibe', 'Nieb', 'Nibh']) {
+    for (const prefix of ['', 'Hey, ', 'Hay ']) {
+      const phrase = `${prefix}${name}, open Paper`;
+      assert.equal(h.voice.wake(phrase)?.rest, 'open Paper', phrase);
+      assert.equal(h.voice.navigation(phrase), 'paper', phrase);
+    }
+  }
+});
+
 test('captured active assistant echo still blocks full wake commands and readback navigation', async () => {
   const h = fixture();
   for (const phrase of ['Nib, open memory', 'Hey Nib, switch to paper', 'home', 'done']) {
