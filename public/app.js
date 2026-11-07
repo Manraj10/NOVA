@@ -45,6 +45,9 @@ const T = {
     offline: 'I can answer that once a model key is added.',
     nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
     takeYou: "I'll take you there.",
+    notClear: "I can't see that line clearly. Lift both hands off the page, then tap to read it again.",
+    noLock: "I can't lock onto this page, so keep it still while we fill it in.",
+    lost: "I lost where that one is after the page moved. Say read again to find it.",
     moved: "The page moved. Hold still, I'm reading it again.",
     penOff: 'Move your pen hand off the page for a moment.',
     holdStill: 'Hold the page still a second.',
@@ -100,6 +103,9 @@ const T = {
     offline: 'Puedo responder eso cuando se agregue una clave del modelo.',
     nothingToFill: title => `${title}. Aquí no hay nada que llenar. Pregúntame dónde está cualquier cosa, o pídeme que lo lea.`,
     takeYou: 'Te llevo ahí.',
+    notClear: 'No veo bien esa línea. Levanta las dos manos de la hoja y toca para leerla otra vez.',
+    noLock: 'No puedo fijar esta hoja, así que no la muevas mientras la llenamos.',
+    lost: 'Perdí dónde está ese campo después de que se movió la hoja. Di leer otra vez para encontrarlo.',
     moved: 'La hoja se movió. No la muevas, la leo otra vez.',
     penOff: 'Aparta un momento de la hoja la mano del bolígrafo.',
     holdStill: 'Mantén la hoja quieta un segundo.',
@@ -155,6 +161,9 @@ const T = {
     offline: 'मॉडल की कुंजी जुड़ने पर मैं इसका जवाब दे पाऊँगा।',
     nothingToFill: title => `${title}। यहाँ भरने के लिए कुछ नहीं है। मुझसे पूछिए कि कुछ भी कहाँ है, या पढ़ने को कहिए।`,
     takeYou: 'मैं आपको वहाँ ले चलता हूँ।',
+    notClear: 'वह लाइन साफ़ नहीं दिख रही। दोनों हाथ पन्ने से हटाइए, फिर दोबारा पढ़ने के लिए टैप कीजिए।',
+    noLock: 'मैं इस पन्ने को पकड़ नहीं पा रहा, इसलिए भरते समय इसे स्थिर रखिए।',
+    lost: 'पन्ना हिलने के बाद मुझे वह जगह नहीं मिल रही। उसे ढूँढने के लिए फिर से पढ़ो बोलिए।',
     moved: 'पन्ना हिल गया। स्थिर रखिए, मैं फिर से पढ़ता हूँ।',
     penOff: 'पेन वाला हाथ एक पल के लिए पन्ने से हटाइए।',
     holdStill: 'एक पल पन्ना स्थिर रखिए।',
@@ -210,6 +219,9 @@ const T = {
     offline: '加上模型密钥后我就能回答这个问题。',
     nothingToFill: title => `${title}。这里没有要填的地方。可以问我任何东西在哪里，或者让我读给你听。`,
     takeYou: '我带你过去。',
+    notClear: '我看不清那一行。请把两只手都从纸上拿开，然后点一下再读一遍。',
+    noLock: '我没法固定这张纸，填写时请别移动它。',
+    lost: '纸移动后我找不到那一处了。说“再读一遍”来重新找。',
     moved: '纸动了。请别动，我再读一遍。',
     penOff: '请先把拿笔的手从纸上移开一下。',
     holdStill: '请让纸保持不动一下。',
@@ -426,7 +438,7 @@ async function listCameras() {
 }
 
 // region is in frame fractions; crops get upscaled so small handwriting stays readable
-function snapshot(region) {
+function snapshot(region, keep) {
   const { img, w, h } = source();
   const r = region || { x0: 0, y0: 0, x1: 1, y1: 1 };
   const x0 = Math.max(0, r.x0) * w, y0 = Math.max(0, r.y0) * h;
@@ -436,7 +448,7 @@ function snapshot(region) {
   c.width = Math.round(sw * scale);
   c.height = Math.round(sh * scale);
   c.getContext('2d').drawImage(img, x0, y0, sw, sh, 0, 0, c.width, c.height);
-  if (!region) S.lastFrame = c; // the whole page as it was sent for reading
+  if (keep) Object.assign(keep, { canvas: c, w, h }); // the exact frame, kept by the caller that sent it
   return c.toDataURL('image/jpeg', 0.85);
 }
 
@@ -492,8 +504,9 @@ async function begin() {
   stayAwake();
   if (!IOS) voice.listen(onVoiceCommand);
   app.dataset.screen = 'run';
+  $('ambient').classList.add('on');
   if (!S.sim) {
-    try { await startCamera(); } catch (e) { setMode('start'); app.dataset.screen = 'start'; cameraFail(e); return say(t().noCamera); }
+    try { await startCamera(); } catch (e) { setMode('start'); app.dataset.screen = 'start'; cameraFail(e); $('ambient').classList.remove('on'); return say(t().noCamera); }
   }
   await readForm();
 }
@@ -524,7 +537,8 @@ async function readForm() {
     if (secs >= 20 && !told.has(20)) { told.add(20); say(t().almost, { soft: true }); }
   }, 500);
   try {
-    const image = snapshot(); // also the frozen reference for the page-movement guard
+    const shot = {};
+    const image = snapshot(null, shot); // also the frozen reference for the page-movement guard
     const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image, lang: S.lang }).finally(() => clearInterval(ticker));
     clearInterval(ticker);
     if (ep !== S.epoch) return; // a newer read started meanwhile
@@ -533,8 +547,9 @@ async function readForm() {
     S.fields = (out.fields || []).map(f => ({ ...f, done: false }));
     // A menu, letter or receipt with nothing to fill is still worth reading: say what it is and offer "where is…".
     if (!S.fields.length) { setMode('idle'); renderLists(); $('docTitle').textContent = S.title; return say(S.title ? t().nothingToFill(S.title) : t().none); }
-    captureDrift();
+    captureDrift(shot);
     await reveal();
+    if (!S.sim && !S.driftOn) await say(t().noLock); // said once, then guidance runs on the last read
     if (S.sim || S.pointerLabel) activate(0, true);
     else checkin();
   } catch (e) {
@@ -741,10 +756,17 @@ async function finishWriting() {
   const stale = () => ep !== S.epoch || S.mode !== 'check' || S.fields[S.i] !== f;
   setMode('check');
   if (S.sim) S.sim.write(f);
-  else { say(t().lift); await handAway(f); }
+  else { say(t().lift); S.clearView = await handAway(f); }
   if (stale()) return;
-  if (S.driftOn && (await settlePage()) === 'moved') return stale() ? undefined : pageMoved('read');
+  const page = S.driftOn ? await settlePage() : 'ok';
   if (stale()) return;
+  if (page === 'moved') return pageMoved('read');
+  if (!S.sim && (S.clearView === false || page === 'unknown') && !S.retriedView) {
+    S.retriedView = true;
+    setMode('write');
+    return say(t().notClear);
+  }
+  S.retriedView = false;
   const image = snapshot(expand(f));
   readback.show(image, f.label);
   try {
@@ -786,14 +808,15 @@ function handRects(now) {
 }
 
 // Lock onto the page as it was read: the frozen parse frame, around the places to fill.
-function captureDrift() {
-  const shot = S.lastFrame, { w, h } = source(), F = S.fields.filter(f => !f.stale);
+function captureDrift(shot) {
+  const F = S.fields.filter(f => !f.stale);
   S.driftOn = false;
-  if (!shot || !w || !h || !F.length) return;
+  if (!shot?.canvas || !shot.w || !shot.h || !F.length) return;
+  const { w, h } = shot;
   const m = 0.06, c = v => Math.min(1, Math.max(0, v));
   const region = { x0: c(Math.min(...F.map(f => f.x0)) - m), y0: c(Math.min(...F.map(f => f.y0)) - m), x1: c(Math.max(...F.map(f => f.x1)) + m), y1: c(Math.max(...F.map(f => f.y1)) + m) };
   // ponytail: low-texture pages can't be locked; guidance then runs on the last read (readout: "Page lock: off")
-  S.driftOn = drift.capture({ img: shot, w, h }, region);
+  S.driftOn = drift.capture({ img: shot.canvas, w, h }, region);
 }
 
 // Guidance only steers on a verified page. Unverified: stop, reset the dwell, and say how to fix it.
@@ -840,14 +863,17 @@ async function pageMoved(resume) {
   if (ep !== S.epoch) return;
   S.readT0 = performance.now();
   try {
-    const image = snapshot();
+    const shot = {};
+    const image = snapshot(null, shot);
     const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image, lang: S.lang, all: true });
     if (ep !== S.epoch) return;
     const fresh = (out.fields || []).map(f => ({ ...f, done: false }));
     const key = f => (f.label || '').trim().toLowerCase();
+    const count = (list, k) => list.filter(f => key(f) === k).length;
     const used = new Set(), merged = [];
     for (const old of S.fields) {
-      const k = fresh.findIndex((f, j) => !used.has(j) && key(f) === key(old));
+      const same = count(S.fields, key(old)) === count(fresh, key(old)); // ambiguous repeats stay unresolved
+      const k = !same ? -1 : fresh.findIndex((f, j) => !used.has(j) && key(f) === key(old));
       if (k >= 0) {
         used.add(k);
         const { x0, y0, x1, y1, say: line, hint } = fresh[k];
@@ -857,7 +883,10 @@ async function pageMoved(resume) {
     }
     fresh.forEach((f, j) => { if (!used.has(j)) merged.push(f); });
     S.fields = merged;
-    captureDrift();
+    S.reviewed = false; // the page moved: the final check must look again
+    captureDrift(shot);
+    if (!S.sim && !S.driftOn) await say(t().noLock);
+    if (ep !== S.epoch) return;
     const i = cur ? S.fields.findIndex(f => f.label === cur.label && !f.done) : -1;
     if (resume === 'read' && i >= 0) {
       S.i = i;
@@ -967,7 +996,7 @@ async function review() {
   S.readT0 = performance.now();
   say(S.sim ? t().checking : `${t().checking} ${t().lift}`);
   try {
-    if (!S.sim) await handAway({ x0: 0, y0: 0, x1: 1, y1: 1 });
+    if (!S.sim && !(await handAway({ x0: 0, y0: 0, x1: 1, y1: 1 }))) throw new Error('covered'); // a covered page is not checked
     const ledger = S.fields.map(({ label, done, skipped, answer: a }) => ({ label, done, skipped, answer: a }));
     const out = S.sim ? (await wait(1200), S.sim.review(S.lang)) : await api('/api/review', { image: snapshot(), fields: ledger, lang: S.lang });
     if (ep !== S.epoch) return;
@@ -1040,6 +1069,7 @@ function primary() {
 function goTo(k) {
   const f = S.fields[k];
   if (!f || ['start', 'reading', 'reveal', 'check'].includes(S.mode)) return;
+  if (f.stale) return say(t().lost); // its box is from before the page moved
   Object.assign(f, { done: false, skipped: false, review: false, answer: '' });
   readback.hide();
   activate(k);
@@ -1317,6 +1347,7 @@ function renderLists() {
 
 // The judges' readout: is the hand really tracked, and how fast is the AI answering?
 function hud(now) {
+  if (!S.sim && ambientVideo.srcObject !== video.srcObject) { ambientVideo.srcObject = video.srcObject; ambientVideo.play().catch(() => {}); }
   const secs = (now - (S.hudAt || now)) / 1000 || 1;
   S.fps = Math.round((S.trackN || 0) / secs);
   S.trackN = 0;
@@ -1439,6 +1470,10 @@ if (matchMedia('(pointer: coarse)').matches) {
 }
 window.nib = S; // lets you poke at state from the console, at the venue too
 window.nibAsk = answer; // and type a question as if it were spoken (a fallback when the room is too loud)
+// The backdrop: the same live page, blurred behind the glass (CSS does the blur on the GPU).
+const ambientVideo = Object.assign(document.createElement('video'), { muted: true, playsInline: true });
+ambientVideo.setAttribute('playsinline', '');
+$('ambient').append(S.sim ? S.sim.canvas : ambientVideo);
 if (S.sim) {
   if (new URLSearchParams(location.search).has('bot')) import('./bot.js').then(m => m.startBot(S)); // robot finger test
   app.dataset.sim = '';
