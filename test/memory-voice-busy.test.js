@@ -143,3 +143,55 @@ test('navigation during pending transcription retires held mic and prevents the 
   assert.deepEqual(f.actions, []); assert.deepEqual(f.state().later, []);
   assert.equal(f.context.location.href, '../around.html');
 });
+
+
+test('audio graph rejection releases the held auto-unlock mic before reporting no listener', async t => {
+  const f = await fixture({ heldMic:true, graphReject:true }); t.after(()=>f.close());
+  assert.equal(f.micCalls(), 0, 'the failure used the borrowed held microphone');
+  assert.equal(f.voice.micOpen, false);
+  assert.deepEqual(f.listenerState(), {micDenied:true, hasAutoMic:false, hasEars:false});
+  assert.equal(f.track.stops, 1); assert.equal(f.track.readyState, 'ended');
+  assert(f.system.some(line=>line.text.includes('Allow the microphone')));
+});
+
+
+const grant = () => { const track={stops:0,stop(){this.stops++;}}; return {track,stream:{getTracks:()=>[track]}}; };
+async function pendingUnlock(t) {
+  const f=await fixture({startListener:false}); t.after(()=>f.close());
+  f.context.$('start').hidden=false;
+  const resolves=[];
+  f.context.navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>resolves.push(resolve));
+  return {f,resolves};
+}
+test('auto-start never opens a microphone while the document is hidden', async t => {
+  const f=await fixture({startListener:false}); t.after(()=>f.close());
+  f.context.$('start').hidden=false; f.context.document.hidden=true;
+  await f.context.autoStart();
+  assert.equal(f.micCalls(),0); assert.equal(f.listenerState().hasEars,false);
+  assert.equal(f.voice.micOpen,false);
+});
+test('a grant arriving after the document becomes hidden is stopped and clears the capture flag', async t => {
+  const {f,resolves}=await pendingUnlock(t), late=grant();
+  const pending=f.context.autoStart(); assert.equal(resolves.length,1);
+  f.context.document.hidden=true; resolves[0](late.stream); await pending;
+  assert.equal(late.track.stops,1); assert.equal(f.listenerState().hasEars,false);
+  assert.equal(f.listenerState().hasAutoMic,false); assert.equal(f.voice.micOpen,false);
+});
+test('pagehide at the visible start screen invalidates a pending real auto-unlock', async t => {
+  const {f,resolves}=await pendingUnlock(t), late=grant();
+  const pending=f.context.autoStart(); f.context.pause();
+  resolves[0](late.stream); await pending;
+  assert.equal(late.track.stops,1); assert.equal(f.listenerState().hasEars,false);
+  assert.equal(f.voice.micOpen,false);
+});
+test('discarding an old grant leaves the newer tap-started listener and mic flag active', async t => {
+  const {f,resolves}=await pendingUnlock(t), old=grant(), current=grant();
+  const pending=f.context.autoStart(); f.context.pause();
+  f.context.begin(); // Actual tap handler must reset listeningPaused before starting ears.
+  assert.equal(resolves.length,2);
+  resolves[1](current.stream); await f.tick(0);
+  assert.equal(f.listenerState().hasEars,true); assert.equal(f.voice.micOpen,true);
+  resolves[0](old.stream); await pending;
+  assert.equal(old.track.stops,1); assert.equal(current.track.stops,0);
+  assert.equal(f.listenerState().hasEars,true); assert.equal(f.voice.micOpen,true);
+});
