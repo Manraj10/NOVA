@@ -249,14 +249,17 @@ function snap() {
 }
 
 async function look(my) {
-  const h = heading;
+  const h = heading, capturedAt = Date.now();
   if (!video.videoWidth) { await sleep(300); return { say: [], hazard: false }; }
   const r = await fetch('api/around', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), lang: 'en' }), signal: AbortSignal.timeout(9000) });
   const j = await r.json().catch(() => ({}));
-  if (my !== gen || !running) return { say: [], hazard: false };
+  const reliable = value => typeof value === 'number' && Number.isFinite(value);
+  const turned = reliable(h) && reliable(heading) && Math.abs(((heading - h + 540) % 360) - 180) > Math.max(15, fov / 3);
+  if (document.hidden || my !== gen || !running || Date.now() - capturedAt >= 7000
+      || reliable(h) !== reliable(heading) || turned) return { say: [], hazard: false };
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   if (j.scene) scene = j.scene;
-  whereAmI(j);
+  if (!newsHeld()) whereAmI(j);
   const stairs = (j.items || []).find(i => (i.name === 'stairs' || i.name === 'step') && i.steps <= 4);
   if (stairs) stairsAlarm(stairs);
   const extra = (j.items || []).filter(i => !eyes || !LOCAL_NAMES.has(i.name)); // the eyes own people and furniture
@@ -272,6 +275,7 @@ async function speakQueue() {
   speakQueue.busy = true;
   while (queue.length) {
     const { text, at, urgent } = queue.shift();
+    if (document.hidden || !running || (!urgent && newsHeld())) continue;
     if (Date.now() - at < (urgent ? 4000 : 10000)) await voice.say(text);
   }
   speakQueue.busy = false;
@@ -281,7 +285,7 @@ async function speakQueue() {
 // The first look says where you are and how many people are near; after that, only a change of place
 // that two looks in a row agree on ("Now you're in a hallway.").
 function whereAmI(j) {
-  if (!j.place) return;
+  if (document.hidden || !running || newsHeld() || !j.place) return;
   const people = Math.max(around.people(), (j.items || []).filter(i => i.kind === 'person').length, seen.filter(i => i.kind === 'person').length);
   if (!place) { place = j.place; queue.unshift({ text: placeLine(place, false), at: Date.now() }, { text: crowdLine(people), at: Date.now() }); speakQueue(); return; } // two pre-made lines, both instant
   if (j.place === place) { placeVote = ''; return; }
@@ -328,7 +332,9 @@ function stairsAlarm(s) {
 
 // One place where news becomes speech, for both the eyes and the cloud.
 let holdNews = 0;
+function newsHeld() { return asking || talking || performance.now() < askUntil; }
 function news({ say, hazard }) {
+  if (document.hidden || !running) return;
   if (hazard && holdNews) { clearTimeout(holdNews); holdNews = 0; speakQueue.busy = false; } // safety first
   if (hazard) {
     // In the way: cut whatever is playing, warn with a low tone, then say it first.
@@ -337,7 +343,7 @@ function news({ say, hazard }) {
     voice.beep(330, 0.22, 0.22);
     queue.push({ text: say.shift(), at: Date.now() + 250, urgent: true });
   }
-  if ((asking || talking) && !hazard) return; // an answer is playing; only a hazard may cut in
+  if (newsHeld() && !hazard) return; // an answer is playing; only a hazard may cut in
   for (const text of say) queue.push({ text, at: Date.now() });
   if (say.length || hazard) speakQueue();
   $('count').textContent = countText();
@@ -347,10 +353,11 @@ async function loop(my) {
   while (running && my === gen) { // a stop/start never leaves two loops running
     try {
       const result = await look(my);
-      if (my !== gen) return;
+      if (document.hidden || !running || my !== gen) return;
       news(result);
     } catch {
-      if (Date.now() - lastErrorSaid > 20000) { lastErrorSaid = Date.now(); voice.say("I can't reach my eyes right now. Check the internet. I'll keep trying."); }
+      if (document.hidden || !running || my !== gen) return;
+      if (!newsHeld() && Date.now() - lastErrorSaid > 20000) { lastErrorSaid = Date.now(); voice.say("I can't reach my eyes right now. Check the internet. I'll keep trying."); }
       await sleep(2000);
     }
     // The phone's own eyes do the live work; the cloud only adds where you are, doors, stairs and the scene.
@@ -405,19 +412,54 @@ function drawBoxes(items) {
 let askUntil = 0, asking = false, talking = false;
 const reply = text => { talking = true; return voice.say(text).finally(() => { talking = false; }); };
 async function askAbout(question) {
-  if (asking || !question.trim()) return;
+  if (document.hidden || typeof question !== 'string' || !question.trim()) return;
+  askAbout.current?.controller.abort(); // a new question supersedes the old one
+  const owner = { controller: new AbortController() };
+  askAbout.current = owner;
   asking = true;
   queue.length = 0;
   voice.stop();
   voice.earcon(false);
-  const looking = voice.say(LOOK);
+  const capturedAt = Date.now(), captureHeading = heading, generation = gen, wasRunning = running, page = location.href;
+  const looking = voice.say(LOOK), speech = voice.seq;
+  const validHeading = h => typeof h === 'number' && Number.isFinite(h);
+  const current = () => {
+    const a = validHeading(captureHeading), b = validHeading(heading);
+    const turned = a && b && Math.abs(((heading - captureHeading + 540) % 360) - 180) > Math.max(15, fov / 3);
+    return !document.hidden && askAbout.current === owner && gen === generation && running === wasRunning
+      && voice.seq === speech && location.href === page && Date.now() - capturedAt < 7000
+      && a === b && !turned;
+  };
+  const deadline = setTimeout(() => owner.controller.abort(), 12000);
+  let watcher;
+  const watch = () => {
+    if (!current()) {
+      owner.controller.abort();
+      if (askAbout.current === owner) { askAbout.current = null; asking = false; }
+    }
+    else watcher = setTimeout(watch, 200);
+  };
+  watcher = setTimeout(watch, 200);
   try {
-    const r = await fetch('api/around-ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), question, lang: 'en' }), signal: AbortSignal.timeout(12000) });
+    const r = await fetch('api/around-ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), question, lang: 'en' }), signal: owner.controller.signal });
     const j = await r.json().catch(() => ({}));
     await looking;
-    await voice.say(r.ok && j.say ? j.say : "I couldn't look just now. Ask me again.");
-  } catch { await looking; await voice.say("I couldn't look just now. Ask me again."); }
-  asking = false;
+    if (current() && !owner.controller.signal.aborted) {
+      // Response ownership is settled. Its own speech changes voice.seq; the
+      // pending-response watcher must not release the turn during that speech.
+      clearTimeout(deadline); clearTimeout(watcher);
+      await voice.say(r.ok && j.say ? j.say : "I couldn't look just now. Ask me again.");
+    }
+  } catch {
+    await looking;
+    if (current() && !owner.controller.signal.aborted) {
+      clearTimeout(deadline); clearTimeout(watcher);
+      await voice.say("I couldn't look just now. Ask me again.");
+    }
+  } finally {
+    clearTimeout(deadline); clearTimeout(watcher);
+    if (askAbout.current === owner) { askAbout.current = null; asking = false; }
+  }
 }
 
 function tellAll() {
