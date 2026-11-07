@@ -3,16 +3,23 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
 import { BAND } from './pano.js';
 
-let estimator;
-// Depth for the loop, wrapped so the 360 seam has no jump. Returns { w, h, at(u, v) -> 0 far .. 1 near }.
+let estimator, warming = null;
+const lib = () => import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1');
+const make = async device => (await lib()).pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device, dtype: device === 'webgpu' ? 'fp16' : 'q8' });
+// Load the depth model early (on the start tap), so it is ready the moment the room is painted.
+export function warmDepth() {
+  return (warming ||= (async () => {
+    for (const device of ['webgpu', 'wasm']) {
+      try { estimator = await make(device); return estimator; } catch (e) { console.warn('depth', device, e); }
+    }
+    warming = null;
+    throw new Error('No depth model');
+  })());
+}
+// Depth for the loop, wrapped so the 360 seam has no jump.
 export async function depthOf(loop, onStatus = () => {}) {
-  const { pipeline, RawImage } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1');
-  const make = device => pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device, dtype: device === 'webgpu' ? 'fp16' : 'q8' });
-  for (const device of estimator ? [] : ['webgpu', 'wasm']) {
-    try { estimator = await make(device); break; }
-    catch (e) { console.warn('depth', device, e); }
-  }
-  if (!estimator) throw new Error('No depth model');
+  const { RawImage } = await lib();
+  await warmDepth();
   onStatus();
   const run = async img => { try { return await estimator(img); } catch (e) { console.warn('depth run failed, retrying on wasm', e); estimator = await make('wasm'); return estimator(img); } };
   const L = loop.width, h = loop.height, pad = Math.round(L * 0.1);
@@ -43,9 +50,11 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
   const camera = new THREE.PerspectiveCamera(72, 1, 0.03, 60);
 
   // depth sampler on the loop: 0 far .. 1 near; a gentle 3x3 average hides the model's noise
-  let dAt = () => 0.2;
-  if (depth) {
-    const dw = depth.width, dh = depth.height, dd = depth.getContext('2d').getImageData(0, 0, dw, dh).data;
+  // (the room can open before depth is ready: it starts as a plain round room and settles into shape)
+  let dAt = () => 0.2, avg = 0.2;
+  function useDepth(d) {
+    if (!d) return;
+    const dw = d.width, dh = d.height, dd = d.getContext('2d').getImageData(0, 0, dw, dh).data;
     dAt = (u, vb) => {
       let s = 0;
       for (let a = -3; a <= 3; a++) for (let b = -3; b <= 3; b++) {
@@ -54,9 +63,10 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
       }
       return s / 49 / 255;
     };
+    // the band's average depth, used toward the poles
+    avg = 0; for (let i = 0; i < 64; i++) avg += dAt(i / 64, 0.5) / 64;
   }
-  // the band's average depth, used toward the poles
-  let avg = 0; for (let i = 0; i < 64; i++) avg += dAt(i / 64, 0.5) / 64;
+  useDepth(depth);
 
   // direction (u around, v up) -> point in the room
   const point = (u, v, out = new THREE.Vector3()) => {
@@ -81,7 +91,9 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
   scene.fog = new THREE.Fog(0x120d09, 7, 16);
 
   // tags: u around the loop, vb down the painting
-  const placed = tags.map(t => ({ ...t, p: point(t.u, 1 - ((1 - BAND) / 2 + t.vb * BAND)).multiplyScalar(0.96) }));
+  const tagAt = t => point(t.u, 1 - ((1 - BAND) / 2 + t.vb * BAND)).multiplyScalar(0.96);
+  const placed = tags.map(t => ({ ...t, p: tagAt(t) }));
+  let morph = null; // { from, to, t } while the room settles into its new shape
 
   let yaw = 0, pitch = 0, drag = null, tilt = null, walk = new THREE.Vector2(), fade = 0;
   const el = renderer.domElement;
@@ -112,6 +124,14 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     fade = Math.min(1, fade + dt / 1.6); mat.opacity = fade * fade * (3 - 2 * fade);
+    if (morph) {
+      morph.t = Math.min(1, morph.t + dt / 1.4);
+      const k = morph.t * morph.t * (3 - 2 * morph.t), a = pos.array;
+      for (let i = 0; i < a.length; i++) a[i] = morph.from[i] + (morph.to[i] - morph.from[i]) * k;
+      pos.needsUpdate = true;
+      placed.forEach((t, i) => t.p.lerpVectors(morph.tagFrom[i], morph.tagTo[i], k));
+      if (morph.t >= 1) { geo.computeBoundingSphere(); morph = null; }
+    }
     f.set(-Math.sin(-yaw), 0, -Math.cos(-yaw)); s.set(Math.cos(-yaw), 0, -Math.sin(-yaw));
     let fw = walk.y, st = walk.x;
     if (keys.has('w') || keys.has('arrowup')) fw += 1;
@@ -135,6 +155,15 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
 
   return {
     tags: placed,
+    // the walls behind you were painted after the room opened: swap the picture in place
+    setPano(canvas) { tex.image = canvas; tex.needsUpdate = true; },
+    // depth arrived after the room opened: glide every wall and label to its real distance
+    setDepth(d) {
+      useDepth(d);
+      const to = new Float32Array(pos.array.length), q = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) { point(uv.getX(i), uv.getY(i), q); to[i * 3] = q.x; to[i * 3 + 1] = q.y; to[i * 3 + 2] = q.z; }
+      morph = { from: Float32Array.from(pos.array), to, t: 0, tagFrom: placed.map(t => t.p.clone()), tagTo: placed.map(tagAt) };
+    },
     walk,
     tiltOn() { addEventListener('deviceorientation', onTilt); },
     tiltOff() { removeEventListener('deviceorientation', onTilt); tilt = null; },
