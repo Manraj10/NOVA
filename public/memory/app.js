@@ -59,19 +59,36 @@ const L = {
 voice.prefetch(Object.values(L));
 
 // ---------- ears: open after the first tap, then always on ----------
-let ears = null, micDenied = false, autoMic = null; // autoMic: the live mic that let sound start without a tap
+let ears = null, micDenied = false, autoMic = null, leaving = false, listeningPaused = false, listenGeneration = 0, captureSequence = 0;
+const captureContext = () => ({ generation: listenGeneration, run, step, room: current, lang: voice.lang || 'en',
+  sequence: ++captureSequence, capturedAt: performance.now(), echo: voice.echoSnapshot() });
+const sessionCurrent = token => !!token && !leaving && !listeningPaused
+  && token.generation === listenGeneration && token.lang === (voice.lang || 'en');
+const contextCurrent = token => sessionCurrent(token) && token.run === run && token.step === step && token.room === current;
+// One build keeps its sid when an image is replaced. Never transfer a correction
+// into another memory or an example with no proven logical target.
+const sameContentTarget = token => contextCurrent(token) || (sessionCurrent(token) && token.run === run
+  && step === 'room' && current?.sid === token.run
+  && (token.step === 'building' || (token.step === 'room' && token.room?.sid === current.sid)));
+const currentTarget = token => ({ ...token, run, step, room: current });
 function startEars() {
-  if (ears || micDenied) return;
+  if (ears || micDenied || leaving || listeningPaused) return;
   voice.unlock();
   voice.micOpen = true;
   try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
-  ears = makeEars({
+  const owner = listenGeneration;
+  const candidate = makeEars({
     ctx: voice.ctx, lang: () => 'en',
-    ignore: () => false, // barge-in: listen while Nib talks; Nib's own words are dropped by the echo check
-    onCapture: () => ({ ...voice.echoSnapshot(), at: performance.now() }), // when the phrase began
-    onText: (text, said) => { if (!voice.echo(text, said)) heard(text, { at: said?.at }); },
+    ignore: () => leaving || listeningPaused,
+    onCapture: captureContext,
+    isCurrent: sessionCurrent,
+    onText: (text, token) => { if (sessionCurrent(token) && !voice.echo(text, token.echo)) heard(text, { token }); },
   });
-  ears.start(autoMic || undefined).catch(() => {
+  ears = candidate;
+  candidate.start(autoMic || undefined).then(() => {
+    if (owner !== listenGeneration || leaving || listeningPaused) candidate.stop();
+  }).catch(() => {
+    if (ears !== candidate || owner !== listenGeneration || leaving || listeningPaused) return;
     ears = null; micDenied = true; voice.micOpen = false;
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
     voice.say(L.noMic);
@@ -84,6 +101,8 @@ function startEars() {
 let greeted = false;
 function begin() {
   if (!$('start') || $('start').hidden) return;
+  if (leaving) return;
+  listeningPaused = false;
   if (greeted) {
     $('start').hidden = true;
     startEars();
@@ -97,17 +116,19 @@ function begin() {
   startEars();
   warmDepth().catch(() => {});
   openWindow(30000, false);
-  voice.say(L.greet).then(() => { if (step === 'home' && !collected) openWindow(25000); });
+  const greeting = captureContext();
+  voice.say(L.greet).then(() => { if (contextCurrent(greeting) && step === 'home' && !collected) openWindow(25000); });
 }
 addEventListener('click', begin, { capture: true }); // click (not pointerdown): iOS only unlocks audio on a real activation
 // Opened by voice ("Hey Nib, open Memory") there's no tap. Like Around me: if the mic is already allowed and
 // sound can start, begin right away; otherwise the "Tap anywhere" screen stays.
 async function autoStart() {
   if (params.has('bake')) return;
+  const owner = listenGeneration;
   try {
     const mic = await voice.autoUnlock(MIC);
     if (!mic) return;
-    if ($('start').hidden) { mic.getTracks().forEach(t => t.stop()); return; }
+    if (owner !== listenGeneration || leaving || listeningPaused || $('start').hidden) { mic.getTracks().forEach(t => t.stop()); return; }
     autoMic = mic; // kept live: stopping it would let iPhone silence the sound again
     begin();
   } catch { /* no permission yet, or no sound without a tap: the start screen handles it */ }
@@ -120,7 +141,9 @@ if (params.has('bake')) { $('start').hidden = true; $('home').inert = false; }
 // start screen again, because iPhone needs one tap before sound and the mic can come back.
 function pause() {
   if ($('start').hidden === false) return;
-  voice.stop();
+  listeningPaused = true; listenGeneration++;
+  clearCollection();
+  voice.stop({ resumeEars: false });
   ears?.stop(); ears = null;
   autoMic?.getTracks().forEach(t => t.stop()); autoMic = null;
   voice.micOpen = false;
@@ -140,15 +163,25 @@ addEventListener('pageshow', e => { if (e.persisted && greeted) resume(); });
 
 // ---------- one router for everything heard or typed ----------
 let step = 'home';            // home | asking | building | room
-let windowUntil = 0, freeUntil = 0, collected = '', commitTimer = null;
+let windowUntil = 0, freeUntil = 0, collected = '', commitTimer = null, windowContext = null, collectionContext = null;
 const norm = t => String(t).toLowerCase().replace(/[.,!?"“”'’]/g, '').replace(/\s+/g, ' ').trim();
 
 // cue: the rising chime and the "Listening…" orb (voice.earcon). Windows opened just before Nib speaks (so you
 // can talk over it) stay silent; voice.say hides the orb when a reply starts.
 let orb = false;
-// free: anything said counts (a memory, a change). A window that isn't free (opened while Nib talks, or
-// after it speaks without asking) only takes commands, so people talking around the phone never edit the room.
-function openWindow(ms = 9000, cue = true, free = true) {
+function clearCollection() {
+  clearTimeout(commitTimer); commitTimer = null;
+  closeWindow(); windowContext = null; collected = ''; collectionContext = null;
+}
+
+// Command-only windows never admit room edits. Free windows follow a wake, a tap, or a direct question.
+function openWindow(ms = 9000, cue = true, free = true, onset = null) {
+  if (leaving || listeningPaused) return;
+  // ASR delivery may lag the next phrase's capture: preserve capture order.
+  if (onset || !sameContentTarget(windowContext)) {
+    const context = onset || captureContext();
+    windowContext = { ...context, after: context.sequence, from: context.capturedAt };
+  }
   windowUntil = performance.now() + ms;
   freeUntil = free ? windowUntil : 0;
   if (cue && !orb) { voice.earcon(true); orb = true; }
@@ -169,53 +202,119 @@ const fixWake = t => t
 // In the room, a sentence that is plainly an edit ("make it darker", "can you add a radio") counts any time,
 // with or without "Hey Nib". Other talk near the phone (the presenter, the judges) never changes the room.
 const EDIT = /^(?:[a-z ]{0,24}\b(?:but|so|and|now|then|just) )?(?:(?:no|ok|okay|yes|yeah|good|nice|great|but|and|so|actually|also|um|uh|hmm|wait|now|then|just)[\s,]+)*(?:make|change|add|put|remove|take|move|turn|paint|replace|swap|fix|show|give|bring|can you|could you|would you|please|i want|id like|i would like|there should|there was|there were|there is|theres|it should|it was|it needs|let it|let there|less|more)\b/;
-function heard(text, { typed = false, at } = {}) {
-  const said = Math.min(at ?? Infinity, performance.now()); // when the phrase began
+function heard(text, { typed = false, token = null, at } = {}) {
+  if (leaving || listeningPaused) return;
+  token ||= captureContext();
+  if (Number.isFinite(at)) token = { ...token, capturedAt: Math.min(at, performance.now()) };
+  if (!sessionCurrent(token)) return;
   text = fixWake(String(text || '').trim());
   if (!text) return;
   const nav = voice.navigation(text);
   if (nav) return go(nav);
   const wake = voice.wake(text);
-  let words = text;
+  let words = wake ? wake.rest : text;
+  const inWindow = sameContentTarget(windowContext) && token.sequence > windowContext.after
+    && token.capturedAt >= windowContext.from && token.capturedAt <= windowUntil
+    && performance.now() <= windowUntil + 10000;
+  const inFreeWindow = inWindow && freeUntil > 0 && token.capturedAt <= freeUntil
+    && performance.now() <= freeUntil + 10000;
+  // Exact global controls are safe in the current scene even after an image/step
+  // transition. Relative content is still bound to its original memory.
+  if (/^(help|options|what can i say|what can you do|what are my options|stop|quiet|be quiet|pause|shh+|hush|status|progress|how (much )?long( .*)?|is it (ready|done)( yet)?|are you done( yet)?)$/.test(norm(words))) {
+    clearCollection(); voice.stop({ resumeEars: false });
+    const control = command(norm(words));
+    return control ? control() : voice.say(step === 'building' ? L.almost : step === 'room' ? 'Your room is ready. Say describe the room or tell me a change.' : L.greet, { system: true });
+  }
+  if (wake && !wake.rest) {
+    clearCollection(); voice.stop({ resumeEars: false });
+    return openWindow(9000, true, true, currentTarget(token));
+  }
+  if (!contextCurrent(token)) {
+    if (sameContentTarget(token) && transferableChange(words) && (wake || typed || inWindow)) token = currentTarget(token);
+    else {
+      if (wake) repeatAfterTransition(token);
+      return;
+    }
+  }
   if (wake) {
-    voice.stop();
-    if (!wake.rest) { orb = false; return openWindow(); }
-    words = wake.rest;
-  } else if (!typed && said > windowUntil && !collected && !(step === 'room' && EDIT.test(norm(words)))) {
+    // Acknowledgement starts when the recognized address arrives, before the
+    // silence timer or a generation result can make the app feel unresponsive.
+    voice.stop({ resumeEars: false });
+    if (!orb) { voice.earcon(true); orb = true; }
+  } else if (!typed && !inWindow && !(step === 'room' && EDIT.test(norm(words)))) {
     if (voice.speaking && /^(stop|quiet|be quiet|pause|shh+|hush)$/.test(norm(words))) { voice.stop(); openWindow(); }
     return; // not meant for Nib
   }
   const cmd = command(norm(words));
-  if (cmd) { collected = ''; closeWindow(); return cmd(); }
-  if (typed) return commit(words);
-  // in the room, only "Hey Nib", the yellow button or a question from Nib opens the door to a change
-  if (!wake && !collected && said > freeUntil && step !== 'home' && !(step === 'room' && EDIT.test(norm(words)))) return;
+  if (cmd) { clearCollection(); return cmd(); }
+  if (typed) return commit(words, token);
+  // Use speech onset, with the same bounded ASR grace as the command window.
+  if (!wake && !collected && step !== 'home' && !inFreeWindow && !(step === 'room' && EDIT.test(norm(words)))) return;
   // speech arrives a phrase at a time: keep collecting until a short silence, then act on all of it
+  if (!collectionContext || !sameContentTarget(collectionContext)) {
+    collected = ''; collectionContext = token;
+  }
   collected = collected ? `${collected} ${words}` : words;
-  windowUntil = freeUntil = performance.now() + 1800;
+  openWindow(1800, false, true, sameContentTarget(windowContext) ? null : token);
   clearTimeout(commitTimer);
-  const check = () => { if (ears?.busy || performance.now() < windowUntil) commitTimer = setTimeout(check, 400); else { const t = collected; collected = ''; closeWindow(); commit(t); } };
+  const owner = collectionContext;
+  const check = () => {
+    if (collectionContext !== owner) return;
+    if (!contextCurrent(owner) && !(sameContentTarget(owner) && transferableChange(collected))) {
+      clearCollection();
+      if (sessionCurrent(owner)) repeatAfterTransition(owner);
+      return;
+    }
+    const now = performance.now();
+    if (now < windowUntil || (ears?.busy && now < windowUntil + 10000)) commitTimer = setTimeout(check, 400);
+    else { const text = collected; clearCollection(); commit(text, owner); }
+  };
   commitTimer = setTimeout(check, 1300);
 }
 
-function commit(text) {
-  if (!text) return;
+const isQuestion = text => /\?\s*$/.test(text) || /^(what|where|when|why|how|who|which|can|could|would|should|do|does|did|is|are|am|has|have|will)\b/i.test(text.trim());
+const isChange = text => /^(?:please\s+)?(?:add|remove|delete|replace|change|make|move|put|turn|set|paint|take away|swap|include)\b/i.test(text.trim())
+  || /^(?:no[,\s]+)?(?:the|that|this|it)\b[\s\S]*\b(?:was|were|should be|used to be|belongs|needs to be)\b/i.test(text.trim());
+const transferableChange = text => !isQuestion(text) && isChange(text)
+  && !/\b(it|this|that|these|those|them|here|there|one)\b/i.test(text);
+function repeatAfterTransition(token) {
+  clearCollection(); voice.stop({ resumeEars: false });
+  openWindow(9000, true, true, currentTarget(token));
+  voice.say('I heard you. Please repeat the change for this room.', { system: true });
+}
+function commit(text, token = captureContext()) {
+  if (!text || !sessionCurrent(token)) return;
+  if (!contextCurrent(token)) {
+    if (sameContentTarget(token) && transferableChange(text)) token = currentTarget(token);
+    else return repeatAfterTransition(token);
+  }
   if (step === 'home') return converse(text);
-  if (step === 'room') return change(text);
+  if (step === 'room' && (EDIT.test(norm(text)) || (!isQuestion(text) && isChange(text)))) return change(text);
   // said while the room is being built: kept, and applied to the whole room as soon as it's ready
-  if (step === 'building') { later.push(text); bubble('you', text); voice.say(L.added); }
+  if (step === 'building' && !isQuestion(text) && isChange(text)) { later.push(text); bubble('you', text); return voice.say(L.added); }
+  return voice.say(step === 'building'
+    ? 'I’m building your room. To add a detail, say add, followed by what you remember. Questions will not change the room.'
+    : 'What should be different? Say change, add, move, or remove, followed by the detail. You can also say describe the room.');
 }
 let later = [];
+
+function sayAndListen(text, ms, cue = true, free = true) {
+  const owner = captureContext();
+  return voice.say(text).then(() => { if (contextCurrent(owner)) openWindow(ms, cue, free); });
+}
 
 function command(t) {
   if (/^(stop|quiet|be quiet|pause|shh+|hush)$/.test(t)) return () => voice.stop();
   if (/^(start over|start again|new (memory|room)|begin again|restart)$/.test(t)) return startOver;
   if (/^(try again|again)$/.test(t) && retry) return () => retry();
   if (step === 'home' && /^(try|open|show me) the example$|^example$/.test(t)) return () => openExample();
-  if (step === 'building' && /^(is it (ready|done)|how long|are you done|whats happening)$/.test(t)) return () => voice.say(L.almost);
+  if (/^(help|options|what can i say|what can you do|what are my options)$/.test(t)) return () => voice.say(step === 'building'
+    ? 'I’m building your room. Say add a detail, how long is left, stop, start over, or home.'
+    : 'Say describe the room, show what’s real, change a detail, start over, or home.');
+  if (step === 'building' && /^(is it (ready|done)( yet)?|how (much )?long( .*)?|are you done( yet)?|whats happening|what is happening|status|progress|when (will|is|can)( .*)?)$/.test(t)) return () => voice.say(L.almost);
   if (step !== 'room') return null;
   if (/^(yes|yeah|yep|yup|yes it is|thats (right|it)|perfect|correct|exactly|thanks|thank you|ok|okay|good|great|nice|beautiful|wow|its perfect)$/.test(t)) return () => voice.say(L.glad);
-  if (/^(no|nope|not quite|not really|thats wrong|wrong|its wrong)$/.test(t)) return () => voice.say(L.what).then(() => openWindow(14000));
+  if (/^(no|nope|not quite|not really|thats wrong|wrong|its wrong)$/.test(t)) return () => sayAndListen(L.what, 14000);
   if (/^(describe( the room| it)?|what(s| is) (here|around me|in the room)|where am i|tell me again|repeat( that)?|say (that|it) again)$/.test(t)) return describeAgain;
   if (/^(show (me )?what(s| is) real|what(s| is) real|show (the )?labels)$/.test(t)) return () => real(true, true);
   if (/^hide (the )?labels$/.test(t)) return () => real(false);
@@ -225,9 +324,20 @@ function command(t) {
 }
 
 function go(dest) {
+  if (leaving) return;
   if (dest === 'memory') return voice.say(L.here);
-  const url = { home: '../', paper: '../paper.html', around: '../around.html' }[dest];
-  voice.say(L[dest]).then(() => { location.href = url; });
+  const routes = { home: '../', paper: '../paper.html', around: '../around.html' };
+  if (!Object.hasOwn(routes, dest)) return;
+  const url = routes[dest];
+  leaving = true; listeningPaused = true; listenGeneration++; run++; changeTok++; soundTok++;
+  clearCollection(); later = []; retry = null; changing = false; current = null; step = 'leaving';
+  ears?.stop(); ears = null;
+  autoMic?.getTracks().forEach(t => t.stop()); autoMic = null;
+  voice.micOpen = false;
+  music?.stop(); music = null; view?.tiltOff();
+  voice.stop({ resumeEars: false });
+  Promise.race([voice.say(L[dest]), new Promise(resolve => setTimeout(resolve, 2500))])
+    .then(() => { location.href = url; });
 }
 
 // The yellow button: talk now (stops Nib, opens a window); tap again to finish early.
@@ -264,11 +374,14 @@ function bubble(who, text) {
   return li;
 }
 function startOver() {
+  if (leaving || listeningPaused) return;
+  clearCollection();
   run++; later = []; retry = null; collected = ''; current = null; changing = false; changeTok++;
   soundTok++; music?.stop(); music = null; view?.tiltOff(); view?.destroy(); view = null;
   step = 'home';
   show('home');
-  voice.say(L.over).then(() => { if (step === 'home') openWindow(12000); });
+  const owner = captureContext();
+  voice.say(L.over).then(() => { if (contextCurrent(owner)) openWindow(12000); });
 }
 $('talkBack').onclick = startOver;
 $('leave').onclick = startOver;
@@ -360,8 +473,8 @@ async function build(memory, me) {
     li.tabIndex = 0; li.setAttribute('role', 'button'); li.style.cursor = 'pointer';
     li.onclick = () => retry?.();
     step = 'building';
-    if (broke) { step = 'home'; voice.say('Nib is out of picture credit right now. Say try the example, and I’ll take you into one I built earlier.').then(() => openWindow(12000)); return; }
-    voice.say(L.broke).then(() => openWindow(10000, true, false));
+    if (broke) { step = 'home'; sayAndListen('Nib is out of picture credit right now. Say try the example, and I’ll take you into one I built earlier.', 12000); return; }
+    sayAndListen(L.broke, 10000, true, false);
   }
 }
 
@@ -410,10 +523,22 @@ async function sayLines(lines) {
   return true;
 }
 
+function prepareRoomEntry(room) {
+  const sameMemory = room?.sid === run && (step === 'building' || (step === 'room' && current?.sid === room.sid));
+  // A wake window is intent, not content. Keep its onset identity for queued ASR;
+  // only an explicit named correction may carry collected text into this memory.
+  const keepWindow = sameMemory && sameContentTarget(windowContext);
+  const keepCollection = sameMemory && sameContentTarget(collectionContext) && transferableChange(collected);
+  if (!keepCollection) { clearTimeout(commitTimer); commitTimer = null; collected = ''; collectionContext = null; }
+  if (!keepWindow) { closeWindow(); windowContext = null; }
+  later = sameMemory ? later.filter(transferableChange) : [];
+}
+
 async function enter(room, { changed = false } = {}) {
+  if (leaving) return;
+  prepareRoomEntry(room);
   current = room;
   step = 'room';
-  windowUntil = freeUntil = 0; collected = ''; clearTimeout(commitTimer); // nothing said before carries into the room
   ctx();
   show('room');
   view?.destroy();
@@ -437,7 +562,7 @@ async function enter(room, { changed = false } = {}) {
   if (!changed || !music || !room.sound) await startSound(room); // the room's own sound follows each change
   else placeSound(room);
   await sleep(changed ? 100 : 900);
-  if (current !== room) return;
+  if (current !== room || step !== 'room' || leaving || listeningPaused) return;
   const lines = [...(changed ? [L.done] : room.narration ? [room.narration] : []), ...sentences(room.describe)];
   if (later.length) { const t = later.join('. '); later = []; return change(t); }
   if (await sayLines(lines) && current === room && step === 'room') confirmAndListen();
@@ -449,8 +574,10 @@ function describeAgain() {
   sayLines(sentences(room.describe)).then(done => { if (done && current === room) confirmAndListen(); });
 }
 function confirmAndListen() {
+  if (leaving || listeningPaused || step !== 'room') return;
+  const owner = captureContext();
   openWindow(16000, false);
-  voice.say(L.confirm).then(() => { if (step === 'room') openWindow(14000); }); // Nib asked, so the answer counts; later changes need Hey Nib
+  voice.say(L.confirm).then(() => { if (contextCurrent(owner)) openWindow(14000); }); // Nib asked, so a current answer counts.
 }
 
 let muted = false, soundTok = 0;
@@ -524,7 +651,7 @@ $('tagsheet').onclick = e => {
   if (act === 'keep') { b.classList.remove('wrong'); b.classList.add('kept'); return; }
   if (act === 'remove') return change(`Remove the ${t.name}.`);
   b.classList.add('wrong');
-  voice.say(`What should the ${t.name} be?`).then(() => openWindow(12000));
+  sayAndListen(`What should the ${t.name} be?`, 12000);
 };
 $('stage').addEventListener('pointerdown', () => { $('tagsheet').hidden = true; });
 
@@ -570,7 +697,7 @@ async function change(text) {
     changing = false; later = [];
     console.warn(e);
     if (current !== room) return;
-    voice.say(L.fail).then(() => openWindow(10000));
+    sayAndListen(L.fail, 10000);
   }
 }
 
@@ -609,6 +736,8 @@ function useClips(clips) {
 }
 const heroMeta = fetch('hero/meta.json').then(r => r.json()).then(m => (useClips(m.clips), m)).catch(() => null);
 async function openExample() {
+  if (leaving || listeningPaused) return;
+  const owner = captureContext();
   startEars();
   $('example').textContent = 'Opening…';
   try {
@@ -616,6 +745,7 @@ async function openExample() {
     if (!meta) throw new Error('no example');
     const toCanvas = img => { const c = Object.assign(document.createElement('canvas'), { width: img.width, height: img.height }); c.getContext('2d').drawImage(img, 0, 0); return c; };
     const [pano, depthImg, front, back] = await Promise.all(['hero/pano.jpg', 'hero/depth.png', 'hero/front.jpg', 'hero/back.jpg'].map(u => load(u).catch(() => null)));
+    if (!contextCurrent(owner)) return;
     const room = { ...meta, pano: toCanvas(pano), depth: depthImg && toCanvas(depthImg), sound: 'hero/sound.mp3', front, back, frontJpg: front && shrink(front, 1600, 0.88) };
     room.soundFrom = room.tags.find(t => t.name === meta.soundFromName) || null;
     run++; later = []; collected = ''; changing = false; changeTok++;
