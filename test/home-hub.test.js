@@ -2,23 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source=fs.readFileSync(new URL('../public/home.js',import.meta.url),'utf8').replace(/\r\n/g, '\n').replace(/^import .*;\n/gm,''); // git may check files out with CRLF
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+const { loadVoice } = createRequire(import.meta.url)('./helpers/voice-mocks.cjs');
+const voiceFile = fileURLToPath(new URL('../public/voice.js', import.meta.url));
+const source=fs.readFileSync(new URL('../public/home.js',import.meta.url),'utf8').replace(/\r\n/g, '\n').replace(/^import .*;\n/gm,'');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture({defer=false,available=true,memoryReady=true}={}) {
   const nodes={live:{textContent:''},listen:{textContent:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}}};
   const events={},domEvents={},said=[],destinations=[],echoCalls=[],listeners=[];
-  let permissions=0,release,stops=0;
+  let permissions=0,release,stops=0,now=1000;
+  const shared = loadVoice(voiceFile).voice;
   const mic={getTracks:()=>[{stop(){stops++;}}]};
   const voice={ctx:{},micOpen:false,init(){},unlock(){},say(t){said.push(t);return Promise.resolve();},
-    prefetch(){},navigation:()=>null,echoSnapshot:()=>({active:true,recent:['menu']}),
+    earcon(){},wake:shared.wake.bind(shared),prefetch(){},navigation:shared.navigation.bind(shared),echoSnapshot:()=>({active:true,recent:['menu']}),
     echo(text,captured){echoCalls.push([text,captured]);return captured?.echo===true;},stop(){}};
   const context={voice,MIC:{},window:{},location:{set href(v){destinations.push(v);}},
     navigator:{mediaDevices:available?{getUserMedia(){permissions++;return defer?new Promise(r=>{release=r;}):Promise.resolve(mic);}}:undefined},
-    document:{documentElement:{dataset:{memoryReady:String(memoryReady)}},getElementById:id=>nodes[id],addEventListener(k,fn){domEvents[k]=fn;}},
+    performance:{now:()=>now},document:{documentElement:{dataset:{memoryReady:String(memoryReady)}},getElementById:id=>nodes[id],addEventListener(k,fn){domEvents[k]=fn;}},
     addEventListener(k,fn){events[k]=fn;},setTimeout:()=>1,
     makeEars(options){const ears={options,stream:null,stopped:false,start(s){this.stream=s;return Promise.resolve(this);},stop(){this.stopped=true;}};listeners.push(ears);return ears;}};
   vm.createContext(context);vm.runInContext(source+'\nthis.startHome=start;this.goHome=go;',context);
-  return{context,voice,nodes,said,destinations,echoCalls,events,domEvents,listeners,mic,release:()=>release(mic),permissions:()=>permissions,stops:()=>stops};
+  return{context,voice,nodes,said,destinations,echoCalls,events,domEvents,listeners,mic,release:()=>release(mic),permissions:()=>permissions,stops:()=>stops,at:time=>{now=time;}};
 }
 test('simultaneous Home starts share one microphone request and expose actual listening state',async()=>{
   const f=fixture({defer:true});const a=f.context.startHome(),b=f.context.startHome();assert.equal(a,b);assert.equal(f.permissions(),1);
@@ -67,4 +72,51 @@ test('restoring Home from browser history resets leaving and can navigate again'
   const f=fixture();f.context.goHome('paper');await flush();assert.deepEqual(f.destinations,['paper.html']);
   f.events.pageshow({persisted:true});assert.match(f.nodes.live.textContent,/back on Nib Home/);
   f.context.goHome('around');await flush();assert.deepEqual(f.destinations,['paper.html','around.html']);
+});
+
+test('bare Nib interrupts the menu and exposes listening without navigating',async()=>{
+  const f=fixture();await f.context.startHome();let stopped=0;f.voice.stop=()=>{stopped++;};f.voice.wake=()=>({rest:''});
+  assert.equal(f.context.window.nibHome.handle('Nib'),'listening');assert.equal(stopped,1);assert.match(f.nodes.live.textContent,/listening/);assert.deepEqual(f.destinations,[]);
+});
+test('a fresh exact destination after the wake cue works through the interrupted menu tail',async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  f.voice.wake=text=>text==='Hey Nib'?{rest:''}:null;
+  options.onText('Hey Nib',options.onCapture());
+  f.voice.navigation=text=>text==='Paper'?'paper':null;
+  options.onText('Paper',{...options.onCapture(),echo:{echo:true}});await flush();assert.deepEqual(f.destinations,['paper.html']);
+});
+test('an unknown explicit wake question gets a spoken Home menu rather than silence',async()=>{
+  const f=fixture();f.voice.wake=()=>({rest:'what can I do here'});
+  assert.equal(f.context.window.nibHome.handle('Hey Nib what can I do here'),'menu');assert.match(f.said.at(-1),/Nib Home/);
+});
+
+for (const wake of ['Nib','Hey Nib']) for (const [command,path] of [['open Paper','paper.html'],['go to Around me','around.html'],['switch to Memory','memory.html']]) test(`actual shared parser routes ${wake}, ${command} from Home`,async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  options.onText(`${wake}, ${command}`,options.onCapture());await flush();assert.deepEqual(f.destinations,[path]);
+});
+for (const wake of ['Nib','Hey Nib']) test(`${wake} followed by help uses the shared parser and leaves the microphone active`,async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  options.onText(wake,options.onCapture());options.onText('help',options.onCapture());
+  assert.match(f.said.at(-1),/Nib Home/);assert.equal(f.nodes.listen.attrs['aria-pressed'],'true');assert.equal(f.listeners[0].stopped,false);
+});
+test('a timely captured follow-up survives slow ASR beyond the listening deadline',async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  options.onText('Nib',options.onCapture());f.at(8500);const token={...options.onCapture(),echo:{echo:true}};
+  f.at(10500);options.onText('Memory',token);await flush();assert.deepEqual(f.destinations,['memory.html']);
+});
+test('a command already captured after Nib is not lost while wake transcription finishes',async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  const wake=options.onCapture();f.at(1300);const command={...options.onCapture(),echo:{echo:true}};
+  f.at(2000);options.onText('Nib',wake);options.onText('Paper',command);
+  await flush();assert.deepEqual(f.destinations,['paper.html']);
+});
+test('an after-deadline acoustic echo cannot use the earlier wake bypass',async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  options.onText('Nib',options.onCapture());f.at(9500);options.onText('Paper',{...options.onCapture(),echo:{echo:true}});
+  await flush();assert.deepEqual(f.destinations,[]);
+});
+for (const command of ['stop','Nib, stop','Hey Nib, stop speaking']) test(`${command} stops Home speech while keeping voice commands available`,async()=>{
+  const f=fixture();await f.context.startHome();let stopped=0;f.voice.stop=()=>{stopped++;};
+  f.listeners[0].options.onText(command,f.listeners[0].options.onCapture());
+  assert.equal(stopped,1);assert.match(f.nodes.live.textContent,/Speech stopped/);assert.equal(f.listeners[0].stopped,false);
 });
