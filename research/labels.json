@@ -1,0 +1,144 @@
+{
+ "elements": [
+  {
+   "name": "doorway into hallway",
+   "source": "photo",
+   "box_2d": [
+    347,
+    502,
+    706,
+    597
+   ]
+  },
+  {
+   "name": "wooden hanging hatch structure",
+   "source": "photo",
+   "box_2d": [
+    168,
+    642,
+    574,
+    762
+   ]
+  },
+  {
+   "name": "wooden chair",
+   "source": "photo",
+   "box_2d": [
+    556,
+    650,
+    763,
+    699
+   ]
+  },
+  {
+   "name": "grindstone wooden frame",
+   "source": "photo",
+   "box_2d": [
+    552,
+    587,
+    781,
+    652
+   ]
+  },
+  {
+   "name": "low wooden bench table",
+   "source": "photo",
+   "box_2d": [
+    639,
+    706,
+    767,
+    800
+   ]
+  },
+  {
+   "name": "wooden door open on left of doorway",
+   "source": "photo",
+   "box_2d": [
+    342,
+    467,
+    729,
+    510
+   ]
+  },
+  {
+   "name": "grandmother",
+   "source": "memory",
+   "box_2d": [
+    243,
+    172,
+    995,
+    345
+   ]
+  },
+  {
+   "name": "dough in mixing bowl",
+   "source": "memory",
+   "box_2d": [
+    602,
+    137,
+    731,
+    237
+   ]
+  },
+  {
+   "name": "radio on stool",
+   "source": "memory",
+   "box_2d": [
+    725,
+    489,
+    861,
+    567
+   ]
+  },
+  {
+   "name": "window with warm orange light",
+   "source": "memory",
+   "box_2d": [
+    168,
+    67,
+    550,
+    166
+   ]
+  },
+  {
+   "name": "brick bread oven",
+   "source": "invented",
+   "box_2d": [
+    390,
+    287,
+    814,
+    401
+   ]
+  },
+  {
+   "name": "large open fireplace",
+   "source": "invented",
+   "box_2d": [
+    435,
+    915,
+    846,
+    1000
+   ]
+  },
+  {
+   "name": "wooden sideboard cabinet",
+   "source": "invented",
+   "box_2d": [
+    492,
+    792,
+    743,
+    878
+   ]
+  },
+  {
+   "name": "wooden kitchen prep table",
+   "source": "invented",
+   "box_2d": [
+    565,
+    0,
+    997,
+    244
+   ]
+  }
+ ]
+}
