@@ -330,7 +330,9 @@ export const voice = {
       // People say "go home", "open Paper", "take me to Memory", "Around me mode, please": still one whole command.
       .replace(/^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /, '')
       .replace(/( mode| page| screen)?( please)?$/, '');
-    const routes = { paper: 'paper', 'around me': 'around', around: 'around', memory: 'memory', home: 'home', back: 'home', menu: 'home' };
+    // "Back" belongs to each mode (previous Paper field / Memory question).
+    // Require Home or menu explicitly for a cross-mode departure.
+    const routes = { paper: 'paper', 'around me': 'around', around: 'around', memory: 'memory', home: 'home', menu: 'home' };
     return Object.hasOwn(routes, destination) ? routes[destination] : null;
   },
 
