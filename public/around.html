@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Nib · Around me</title>
+<link rel="icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="around.css">
+</head>
+<body>
+<main id="app" aria-live="off">
+  <video id="video" playsinline muted autoplay aria-hidden="true"></video>
+  <div id="chips" aria-hidden="true"></div>
+
+  <header class="top glass">
+    <a class="back" href="./" aria-label="Back to Paper mode">Paper</a>
+    <strong>Around me</strong>
+    <span id="count" class="count">Nothing yet</span>
+  </header>
+
+  <section class="sheet glass">
+    <p id="caption" class="caption" aria-live="polite">Turn slowly. I'll tell you who and what is around you.</p>
+    <button id="ask" class="primary" type="button">What's around me?</button>
+  </section>
+
+  <section id="start" class="start">
+    <img class="icon" src="icon.svg" alt="" width="72" height="72">
+    <h1>Around me</h1>
+    <p>Hold your phone at chest height and turn slowly. I'll tell you who is around you, what is in your way, and where the doors are.</p>
+    <button id="go" class="cta" type="button">Tap anywhere to start</button>
+    <p class="fine">Say "what's around me" any time, or tap the screen. Nib never says who a person is.</p>
+  </section>
+</main>
+<script type="module" src="around-app.js"></script>
+</body>
+</html>
