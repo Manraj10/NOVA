@@ -8,6 +8,7 @@ import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
 import { makeAround, allLines, placeLine, crowdLine } from './around.js';
 import { makeEyes, LOCAL_NAMES } from './eyes.js';
+import { makeAroundCamera } from './around-camera.js';
 
 const $ = id => document.getElementById(id);
 const video = $('video');
@@ -34,60 +35,154 @@ function onOrient(e) {
   else if (e.absolute && typeof e.alpha === 'number') heading = (360 - e.alpha) % 360;
 }
 
-async function start(auto = false) {
-  if (running) return;
-  // Everything that needs the tap happens before the first await.
+function start(auto = false) {
+  if (running) return Promise.resolve();
+  if (cameraStarting) return cameraStarting;
   voice.unlock();
   warmVoice();
-  const askOrient = auto ? Promise.resolve('auto') : window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied'); // must start inside the tap
+  // The compass permission needs a real tap, so an automatic start (opened by voice) skips it.
+  const askOrient = auto ? Promise.resolve('auto') : window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied');
   addEventListener('deviceorientationabsolute', onOrient);
   addEventListener('deviceorientation', onOrient);
   $('start').hidden = true;
-  try {
-    const tall = PHONE && innerHeight > innerWidth;
-    const video_ = { facingMode: { ideal: 'environment' }, width: { ideal: tall ? 1440 : 1920 }, height: { ideal: tall ? 1920 : 1440 } };
-    let stream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ video: video_, audio: MIC }); }
-    catch { stream = await navigator.mediaDevices.getUserMedia({ video: video_ }); }
-    const mic = stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null;
-    let track = stream.getVideoTracks()[0];
-    // 0.5x: the ultra-wide lens sees a room the way a person does. iPhone Safari lists it as its own
-    // camera ("Back Ultra Wide Camera") once permission is granted; other phones may offer zoom instead.
+  const owner = cameraLifecycle;
+  let pending;
+  pending = (async () => {
     try {
-      const wide = (await navigator.mediaDevices.enumerateDevices()).find(d => d.kind === 'videoinput' && /ultra ?wide|0\.5/i.test(d.label));
-      if (wide && track.getSettings().deviceId !== wide.deviceId) {
-        const s2 = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: wide.deviceId }, width: video_.width, height: video_.height } });
-        track.stop();
-        track = s2.getVideoTracks()[0];
-        lens = 'ultra wide';
-      } else {
-        const zoom = track.getCapabilities?.().zoom;
-        if (zoom && zoom.min < 1) { await track.applyConstraints({ advanced: [{ zoom: zoom.min }] }); lens = `zoom ${zoom.min}`; }
-      }
-    } catch { /* keep the main lens */ }
-    fov = lens === 'main' ? (PHONE ? 50 : 60) : (PHONE ? 85 : 100);
-    around.hfov = fov;
-    video.srcObject = new MediaStream([track]);
-    await video.play();
-    if (mic) startEars(mic);
-  } catch {
-    $('start').hidden = false;
-    return voice.say("I can't open the camera. Allow the camera for this site, then tap again.");
-  }
-  const orient = await askOrient;
-  running = true;
-  // The first look starts while the welcome plays; its news waits in the queue until the welcome ends.
-  speakQueue.busy = true;
-  voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START).then(() => {
-    // Right after the greeting Nib is already listening (chime + orb): ask anything without saying Nib.
-    // News waits 6 s for the question; a hazard still cuts in.
-    askUntil = performance.now() + 8000;
-    voice.earcon(true);
-    holdNews = setTimeout(() => { holdNews = 0; speakQueue.busy = false; speakQueue(); }, 8000);
-  });
-  loop(++gen);
-  eyesReady.then(() => requestAnimationFrame(watch));
+      const capture = await camera.start();
+      if (owner !== cameraLifecycle) return;
+      await bindCameraMic(capture.micStream, owner);
+      if (owner !== cameraLifecycle) return;
+      const orient = await askOrient;
+      if (owner !== cameraLifecycle) return;
+      cameraHadStarted = true;
+      running = true;
+      speakQueue.busy = true;
+      voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START)
+        .then(() => {
+          if (owner !== cameraLifecycle) return;
+          // Right after the greeting Nib is already listening (chime + orb): ask anything without saying Nib.
+          // News waits 8 s for the question; a hazard still cuts in.
+          askUntil = performance.now() + 8000;
+          voice.earcon(true);
+          holdNews = setTimeout(() => { holdNews = 0; speakQueue.busy = false; speakQueue(); }, 8000);
+        });
+      loop(++gen);
+      if (!cameraWatchStarted) { cameraWatchStarted = true; eyesReady.then(() => requestAnimationFrame(watch)); }
+    } catch (error) {
+      if (owner !== cameraLifecycle || error?.name === 'AbortError') return;
+      camera.stop();
+      $('start').hidden = false;
+      $('aroundControls')?.setAttribute('inert', '');
+      return voice.say("I can't open the camera. Allow the camera for this site, then tap again.");
+    } finally { if (cameraStarting === pending) cameraStarting = null; }
+  })();
+  cameraStarting = pending;
+  return pending;
 }
+
+// Camera owns capture tracks; the existing ears own transcription. The owner's
+// exposed controller lets background/pagehide abort its queue without new ears.
+let cameraStarting = null, cameraRecovering = null, cameraLifecycle = 0;
+let cameraHadStarted = false, cameraWatchStarted = false, cameraResumeWanted = false;
+let cameraEars = null, cameraBoundMic = null, cameraMicBinding = null, cameraOrientationTimer = null;
+const cameraTrackListeners = new WeakSet();
+const camera = makeAroundCamera({ video, phone: PHONE, audio: MIC, onChange: capture => {
+  lens = capture.lens;
+  // Browser lens labels do not measure optical FOV. These retain the existing
+  // approximate projection defaults, rather than treating zoom as calibration.
+  fov = capture.verifiedDevice && lens === 'ultra wide' ? (PHONE ? 85 : 100) : (PHONE ? 50 : 60);
+  around.hfov = fov;
+  const chip = $('cameraLens');
+  if (chip) {
+    chip.hidden = false;
+    chip.textContent = lens === 'ultra wide' ? 'Ultra-wide' : lens === 'front' ? 'Front camera' : lens.startsWith('zoom ') ? lens.replace('zoom ', 'Zoom ') : 'Camera';
+    chip.setAttribute('aria-label', capture.verifiedDevice ? 'Camera lens: ultra-wide device confirmed.' : `Camera lens: ${chip.textContent}.`);
+  }
+  for (const track of [camera.track, ...(camera.micStream?.getAudioTracks() || [])]) {
+    if (!track || cameraTrackListeners.has(track)) continue;
+    cameraTrackListeners.add(track);
+    track.addEventListener?.('ended', () => { if (cameraHadStarted && !document.hidden) recoverAroundCamera(); });
+  }
+} });
+async function bindCameraMic(mic, owner) {
+  if (!mic) { cameraMicBinding = null; cameraEars?.stop(); cameraEars = null; cameraBoundMic = null; voice.micOpen = false; return; }
+  if (cameraBoundMic === mic && cameraEars) return;
+  if (cameraMicBinding?.mic === mic && cameraMicBinding.owner === owner) return cameraMicBinding.promise;
+  cameraEars?.stop();
+  cameraEars = null; cameraBoundMic = null;
+  const binding = { mic, owner };
+  cameraMicBinding = binding;
+  binding.promise = (async () => {
+    try {
+      const returned = await startEars(mic);
+      const ears = returned || window.nibAround?.ears;
+      if (owner !== cameraLifecycle || cameraMicBinding !== binding) {
+        if (ears?.stream === mic && ears !== cameraEars) ears.stop();
+        return;
+      }
+      if (!ears || typeof ears.stop !== 'function' || ears.stream !== mic) { voice.micOpen = false; return; }
+      cameraEars = ears; cameraBoundMic = mic;
+    } finally { if (cameraMicBinding === binding) cameraMicBinding = null; }
+  })();
+  return binding.promise;
+}
+function stopCameraEars() {
+  for (const ears of new Set([cameraEars, window.nibAround?.ears])) ears?.stop();
+  cameraEars = null; cameraBoundMic = null; cameraMicBinding = null;
+  voice.micOpen = false;
+}
+function recoverAroundCamera() {
+  if (!cameraHadStarted || document.hidden || cameraRecovering) return cameraRecovering;
+  const owner = cameraLifecycle, resume = running || cameraResumeWanted;
+  running = false; const loopGeneration = ++gen;
+  queue.length = 0;
+  let pending;
+  pending = (async () => {
+    try {
+      const capture = await camera.recover();
+      if (owner !== cameraLifecycle) return;
+      await bindCameraMic(capture.micStream, owner);
+      if (owner !== cameraLifecycle || gen !== loopGeneration || document.hidden) return;
+      cameraResumeWanted = false;
+      if (resume) { running = true; loop(++gen); }
+    } catch (error) {
+      if (owner !== cameraLifecycle || error?.name === 'AbortError') return;
+      cameraResumeWanted = false;
+      $('start').hidden = false;
+      voice.say('The camera stopped. Tap Start Around me to try again.');
+    } finally { if (cameraRecovering === pending) cameraRecovering = null; }
+  })();
+  cameraRecovering = pending; return pending;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    cameraResumeWanted = running; running = false; gen++; queue.length = 0;
+    cameraLifecycle++; cameraStarting = null; cameraRecovering = null;
+    stopCameraEars();
+    voice.stop({ resumeEars: false }); camera.suspend();
+    if (!cameraHadStarted) $('start').hidden = false;
+  } else recoverAroundCamera();
+});
+const cameraOrientationChanged = () => {
+  clearTimeout(cameraOrientationTimer);
+  cameraOrientationTimer = setTimeout(recoverAroundCamera, 250);
+};
+addEventListener('orientationchange', cameraOrientationChanged);
+window.screen?.orientation?.addEventListener?.('change', cameraOrientationChanged);
+addEventListener('pagehide', () => {
+  cameraLifecycle++; running = false; gen++; queue.length = 0;
+  cameraStarting = null; cameraRecovering = null; cameraResumeWanted = false;
+  clearTimeout(cameraOrientationTimer);
+  stopCameraEars();
+  camera.stop(); voice.stop({ resumeEars: false }); voice.micOpen = false;
+  cameraHadStarted = false;
+  if ($('cameraLens')) $('cameraLens').hidden = true;
+});
+addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  $('start').hidden = false; $('aroundControls')?.setAttribute('inert', ''); $('go')?.focus();
+});
 
 // ---------- instant news from the on-device eyes ----------
 let lastNews = 0;
@@ -361,3 +456,6 @@ $('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
 video.addEventListener('click', () => { window.DeviceOrientationEvent?.requestPermission?.().catch(() => {}); tellAll(); });
 let earsRef = null; // the live listener, so the camera lifecycle can stop it when the page is left
 window.nibAround = { get ears() { return earsRef; }, ask: askAbout, around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
+
+// The voice-command owner may await this bounded hardware hook; no new listener.
+window.nibAround.camera = camera;
