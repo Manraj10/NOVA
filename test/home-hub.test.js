@@ -104,6 +104,12 @@ test('a timely captured follow-up survives slow ASR beyond the listening deadlin
   options.onText('Nib',options.onCapture());f.at(8500);const token={...options.onCapture(),echo:{echo:true}};
   f.at(10500);options.onText('Memory',token);await flush();assert.deepEqual(f.destinations,['memory.html']);
 });
+test('a command already captured after Nib is not lost while wake transcription finishes',async()=>{
+  const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
+  const wake=options.onCapture();f.at(1300);const command={...options.onCapture(),echo:{echo:true}};
+  f.at(2000);options.onText('Nib',wake);options.onText('Paper',command);
+  await flush();assert.deepEqual(f.destinations,['paper.html']);
+});
 test('an after-deadline acoustic echo cannot use the earlier wake bypass',async()=>{
   const f=fixture();await f.context.startHome();const options=f.listeners[0].options;
   options.onText('Nib',options.onCapture());f.at(9500);options.onText('Paper',{...options.onCapture(),echo:{echo:true}});

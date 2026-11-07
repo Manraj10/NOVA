@@ -58,7 +58,9 @@ function handle(text, echoContext, token) {
   }
   if (wake && !wake.rest) {
     voice.stop({ resumeEars: false });
-    wakeAt = performance.now(); wakeUntil = wakeAt + 8000;
+    // FIFO transcription can deliver the wake only AFTER the user has already
+    // spoken the next phrase. Order follow-ups by capture, not ASR delivery.
+    wakeAt = token?.capturedAt ?? performance.now(); wakeUntil = performance.now() + 8000;
     wakeAfter = token?.sequence ?? captureSequence;
     state('I’m listening. Say Paper, Around me, Memory, or help.', !!ears?.stream);
     voice.earcon(true);

@@ -87,6 +87,26 @@ test('whole quoted destination retains the existing direct-command contract', ()
   assert.equal(h.voice.navigation("'paper'"), 'paper');
 });
 
+test('natural destination phrases added by the teammate remain valid with either wake prefix', () => {
+  const h = fixture();
+  for (const wake of ['', 'Nib, ', 'Hey Nib, ']) {
+    for (const [phrase, route] of [['go home', 'home'], ['take me to Memory', 'memory'],
+      ['Around me mode, please', 'around'], ['please open the Paper page', 'paper'],
+      ['back to home', 'home'], ['switch to Around me', 'around']]) {
+      assert.equal(h.voice.navigation(wake + phrase), route, wake + phrase);
+    }
+  }
+});
+
+test('back stays a local mode action rather than unexpectedly leaving Paper or Memory', () => {
+  const h = fixture();
+  for (const phrase of ['back', 'go back', 'Nib, back', 'Hey Nib, go back']) {
+    assert.equal(h.voice.navigation(phrase), null, phrase);
+  }
+  h.voice.handle('Hey Nib, go back');
+  assert.deepEqual(h.commands, [['ask', 'go back']]);
+});
+
 test('captured active assistant echo still blocks full wake commands and readback navigation', async () => {
   const h = fixture();
   for (const phrase of ['Nib, open memory', 'Hey Nib, switch to paper', 'home', 'done']) {
