@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source=fs.readFileSync(new URL('../public/home.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
+const source=fs.readFileSync(new URL('../public/home.js',import.meta.url),'utf8').replace(/\r\n/g, '\n').replace(/^import .*;\n/gm,''); // git may check files out with CRLF
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture({defer=false,available=true,memoryReady=true}={}) {
   const nodes={live:{textContent:''},listen:{textContent:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}}};

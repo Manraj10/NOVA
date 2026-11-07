@@ -328,8 +328,11 @@ export const voice = {
     const low = String(text || '').trim().toLowerCase();
     const wake = WAKE.exec(low);
     const destination = (wake ? low.slice(wake[0].length) : low)
-      .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/\s+/g, ' ').trim();
-    const routes = { paper: 'paper', 'around me': 'around', memory: 'memory', home: 'home' };
+      .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/,/g, '').replace(/\s+/g, ' ').trim()
+      // People say "go home", "open Paper", "take me to Memory", "Around me mode, please": still one whole command.
+      .replace(/^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /, '')
+      .replace(/( mode| page| screen)?( please)?$/, '');
+    const routes = { paper: 'paper', 'around me': 'around', around: 'around', memory: 'memory', home: 'home', back: 'home', menu: 'home' };
     return Object.hasOwn(routes, destination) ? routes[destination] : null;
   },
 

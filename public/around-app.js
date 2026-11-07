@@ -104,24 +104,35 @@ async function startEars(mic) {
       onCapture: () => voice.echoSnapshot(), // what Nib was saying when this phrase began
       onText: (text, said) => {
         if (voice.echo(text, said)) return; // Nib hearing itself through the speaker
-        // "Nib" opens an 8 s window for a question; "Hey Nib, where's the door?" asks at once.
-        if (askUntil > performance.now()) { askUntil = 0; return askAbout(text); }
-        const wake = voice.wake(text);
-        if (wake && wake.rest && !voice.navigation(text) && !/^(stop|pause|start|resume|home)$/i.test(wake.rest.trim())) return askAbout(wake.rest);
+        // "Nib" opens an 8 s window; "Hey Nib, <words>" acts at once. Commands always win over questions:
+        // "Hey Nib, go home" goes home, it doesn't ask the camera about "go home".
+        const wake = voice.wake(text), windowOpen = askUntil > performance.now();
         if (wake && !wake.rest) { askUntil = performance.now() + 8000; queue.length = 0; voice.stop(); voice.earcon(true); return; }
-        // Whole short phrases only, so news like "two people ahead" or a stray word never acts.
-        const t = text.toLowerCase().replace(/[.,!?"']/g, '').replace(/^(hey |ok |okay )?nib,? /, '').trim();
-        const go = (line, url) => voice.say(line).then(() => { location.href = url; });
-        if (/^(go )?(home|menu|go back)$/.test(t)) go('Going home.', './');
-        else if (/^(open )?(paper|fill (in )?a form)$/.test(t)) go('Opening Paper.', 'paper.html');
-        else if (/^(open )?memory$/.test(t)) go('Opening Memory.', 'memory.html');
-        else if (/^(stop|pause|quiet|be quiet)$/.test(t)) { running = false; gen++; queue.length = 0; voice.stop(); voice.say('Paused. Say start to go on.'); }
-        else if (/^(start|resume|continue|go on)$/.test(t) && !running) { running = true; voice.say('Going on.'); loop(++gen); }
-        else if (/^(whats|what is) going on|^(describe|what do you see)/.test(t)) tellScene();
-        else if (/^(whats|what is) around( me)?|^who(s| is) (here|around|near)/.test(t)) tellAll();
+        const words = wake ? wake.rest : text;
+        if (command(words)) { askUntil = 0; return; }
+        if (wake || windowOpen) { askUntil = 0; askAbout(words); }
+        // anything else, said without "Nib", is ordinary talk in the room: ignored
       },
     }).start(mic);
   } catch { voice.micOpen = false; }
+}
+
+// Whole short phrases only, so news like "two people ahead" or a stray word never acts. True if handled.
+function command(words) {
+  const t = String(words).toLowerCase().replace(/[.,!?"']/g, '').replace(/\s+/g, ' ').trim();
+  const go = (line, url) => { running = false; gen++; queue.length = 0; voice.stop(); voice.say(line).then(() => { location.href = url; }); };
+  const nav = voice.navigation(t);
+  if (nav === 'home') go('Going home.', './');
+  else if (nav === 'paper') go('Opening Paper.', 'paper.html');
+  else if (nav === 'memory') go('Opening Memory.', 'memory/');
+  else if (nav === 'around') voice.say("You're in Around me.");
+  else if (/^(stop|pause|quiet|be quiet)$/.test(t)) { running = false; gen++; queue.length = 0; voice.stop(); voice.say('Paused. Say Nib, start, to go on.'); }
+  else if (/^(start|resume|continue|go on)$/.test(t)) { if (!running) { running = true; voice.say('Going on.'); loop(++gen); } }
+  else if (/^(whats|what is) going on|^(describe|what do you see)/.test(t)) tellScene();
+  else if (/^(whats|what is) around( me)?$|^who(s| is) (here|around|near)( me)?$/.test(t)) tellAll();
+  else if (/^(help|what can i say)$/.test(t)) voice.say("Say Nib, then ask anything about what's in front of you. Or say what's around me, what's going on, stop, start, or home.");
+  else return false;
+  return true;
 }
 
 // Small frames: about 2-4 s per look instead of 3-8 s at full size, and people still count right.
