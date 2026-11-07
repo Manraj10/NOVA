@@ -14,8 +14,8 @@ const handler = name => {
   assert(match, `actual app handler ${name} must exist`);
   return match[0];
 };
-const commandConstants = voiceSource.match(/^const (?:DONE|REPEAT|SKIP|REDO|WAKE|BARE) = .*;$/gm);
-assert.equal(commandConstants?.length, 6, 'exercise all actual command expressions');
+const commandConstants = voiceSource.match(/^const (?:DONE|REPEAT|SKIP|REDO|NAME|HEY|WAKE|BARE) = .*;$/gm);
+assert.equal(commandConstants?.length, 8, 'exercise all actual command expressions');
 const commandHandler = voiceSource.match(/  handle\(text\) \{[\s\S]*?\n  \}/)?.[0].replace('  handle(text)', 'function handle(text)');
 assert(commandHandler, 'actual voice parser must exist');
 const flush = () => new Promise(resolve => setImmediate(resolve));

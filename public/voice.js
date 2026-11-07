@@ -17,10 +17,14 @@ const SKIP = /^(skip( it| this( one)?)?|saltar|छोड़ो|跳过)$/;
 const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो|重写)$/;
 // Only a START address wakes Nib: "Nib", "Nib, <question>" and "Hey Nib, <question>".
 // Accept recognizer spellings (Mib, Nim, Ned, Nid all happened live) and joined "HeyNib", never an embedded mention or "Nibbles".
+// The name as phones actually transcribe it (all seen live): nib, neb, nip, nim, mib, ned, nid, knib…
+// and run together with "hey": "HeNeB", "Hennip", "Heynib".
+const NAME = '(?:k?n+[iey]+[bp]+[esh]?|n[iey]+d|n[iy]m|m[iy]b|knob)';
+const HEY = '(?:hey|hay|hei|hen|he|hai)';
 // With "Hey" in front, anything may follow. A bare name must be addressed ("Nib." / "Nib, what's this?"),
 // so a presenter saying "Nib reads the form…" in the pitch doesn't trigger it.
-const WAKE = /^(?:(?:hey|hay)[\s,]*|(?:hi|ok|okay)[\s,]+)(nib|nibb|nibs|nibbs|knib|nip|neb|ned|nid|nim|mib|neeb|nibe|nieb|nibh|knob)(?=$|[\s,.:!?;。！？])|^(nib|nibb|nibs|nibbs|knib|nip|neb|ned|nid|nim|mib|neeb|nibe|nieb|nibh|knob)(?=$|[,.:!?;。！？])/;
-const BARE = /^(?:(?:hey|hay)[\s,]*|(?:hi|ok|okay)[\s,]+)?(nib|nibb|nibs|nibbs|knib|nip|neb|ned|nid|nim|mib|neeb|nibe|nieb|nibh|knob)$/;
+const WAKE = new RegExp(`^(?:${HEY}[\\s,]*|(?:hi|ok|okay)[\\s,]+)${NAME}(?=$|[\\s,.:!?;。！？])|^${NAME}(?=$|[,.:!?;。！？])`);
+const BARE = new RegExp(`^(?:${HEY}[\\s,]*|(?:hi|ok|okay)[\\s,]+)?${NAME}$`);
 // Best built-in voices first: iPhone Premium/Enhanced downloads, then Edge/Chrome neural voices.
 const RANK = [/premium/i, /enhanced/i, /natural|neural/i, /online|google/i, /ava|zoe|samantha|aria|jenny|siri/i];
 const score = v => { const k = RANK.findIndex(r => r.test(v.name)); return k < 0 ? RANK.length : k; };

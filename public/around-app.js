@@ -22,7 +22,7 @@ const eyesReady = makeEyes().then(e => (eyes = e)).catch(() => null);
 voice.init();
 voice.onCaption = text => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
 // Make every news line in the natural voice now, before the first look: speech is then instant.
-const START = "Around me. Hold your phone at chest height and turn slowly. Say Nib, then ask me anything. Or say stop, or home.";
+const START = "Hi, I'm here. Hold your phone at chest height and turn slowly, and I'll tell you what's around you. Just say Nib whenever you want to ask me something.";
 const LOOK = 'Let me look.';
 // Three warm-up queues of four (12 at a time): all 153 lines are ready about 15 s after the page opens.
 const LINES = [START, LOOK, ...allLines()];

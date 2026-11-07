@@ -8,7 +8,7 @@ const fn = name => { const m = app.match(new RegExp(`(?:async )?function ${name}
 const methods = ['echoSnapshot', 'echo', 'wake', 'navigation', 'handle'].map(name => {
   const m = speech.match(new RegExp(`  ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n  \\},`)); assert(m, name); return m[0];
 });
-const constants = speech.match(/^const (?:DONE|REPEAT|SKIP|REDO|WAKE|BARE) = .*;$/gm); assert.equal(constants.length, 6);
+const constants = speech.match(/^const (?:DONE|REPEAT|SKIP|REDO|NAME|HEY|WAKE|BARE) = .*;$/gm); assert.equal(constants.length, 8);
 function fixture(mode) {
   const actions = [], says = []; let options, stops = 0, factories = 0;
   const S = { mode, epoch: 1, lang: 'en', fields: [{ label: 'Name', kind: 'text', done: false }], i: 0, awaitQ: 0 };
