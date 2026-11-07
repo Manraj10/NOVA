@@ -20,7 +20,7 @@
   <p class="fine">Then just talk. Say “Nib” any time to tell me something.</p>
 </section>
 
-<main id="home" class="screen on">
+<main id="home" class="screen on" inert>
   <div class="home-pan" aria-hidden="true"></div>
   <header class="top glass">
     <a class="back" href="../" aria-label="Home">‹ Home</a>
@@ -28,7 +28,7 @@
     <span aria-hidden="true"></span>
   </header>
   <div class="home-inner">
-    <h1>Step back into a room you remember.</h1>
+    <h1 tabindex="-1" data-focus>Step back into a room you remember.</h1>
     <p class="lede">Tell me about it in a few words. I’ll build it all the way around you and tell you what’s where.</p>
     <button class="mic big" id="mic1" aria-label="Talk to Nib" aria-pressed="false"><span aria-hidden="true"></span></button>
     <p class="note" id="note1">Just start talking, or say “Nib” any time.</p>
@@ -48,7 +48,7 @@
     <span class="count" id="clock" aria-hidden="true"></span>
   </header>
   <div class="bg"><img id="waitimg" alt="" hidden></div>
-  <ol class="chat" id="chat" aria-label="Conversation"></ol>
+  <ol class="chat" id="chat" aria-label="Conversation" tabindex="-1" data-focus></ol>
   <section class="sheet glass" id="answerSheet">
     <p class="caption" id="question"></p>
     <div class="answer-row">
@@ -63,8 +63,8 @@
   <div id="tags" aria-label="Labels"></div>
   <header class="top glass">
     <button class="back" id="leave" aria-label="Leave the room">‹</button>
-    <strong id="rtitle">Your room</strong>
-    <button class="back" id="mute" aria-label="Sound on. Turn sound off" aria-pressed="true">♪</button>
+    <strong id="rtitle" tabindex="-1" data-focus>Your room</strong>
+    <button class="back" id="mute" aria-label="Room sound" aria-pressed="true">♪</button>
   </header>
   <div class="legend" id="legend" hidden aria-hidden="true">
     <span class="k memory">From your words</span><span class="k invented">Imagined by Nib</span>
@@ -74,7 +74,7 @@
     <div class="room-row">
       <div class="stick" id="stick" aria-hidden="true"><span></span></div>
       <button class="mic" id="mic3" aria-label="Talk to Nib. Tell me anything to change" aria-pressed="false"><span aria-hidden="true"></span></button>
-      <button class="pill" id="real" aria-pressed="false">Show what’s real</button>
+      <button class="pill" id="real">Show what’s real</button>
       <button class="back round" id="tilt" aria-label="Look around by moving your phone" aria-pressed="false">⟳</button>
     </div>
     <p class="howto" id="howto">Drag to look around · W A S D to walk · say “Nib” and tell me anything to change</p>

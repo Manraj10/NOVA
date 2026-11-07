@@ -20,7 +20,10 @@ const sentences = t => String(t || '').match(/[^.!?]+[.!?]+[\s”’"]*|[^.!?]+$
 voice.init();
 const ctx = () => { if (!voice.ctx) voice.unlock(); return voice.ctx; };
 
-function show(id) { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id)); }
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+  $(id).querySelector('[data-focus]')?.focus({ preventScroll: true });
+}
 const screen = () => document.querySelector('.screen.on')?.id;
 // captions follow whatever Nib says, on the screen that is showing (not aria-live: the voice already says it)
 voice.onCaption = text => { const el = { room: $('caption'), talk: $('question'), home: $('note1') }[screen()]; if (el) el.textContent = text; };
@@ -77,16 +80,47 @@ function startEars() {
 
 // Like Around me: one tap anywhere (a VoiceOver double-tap works too) unlocks sound and opens the ears.
 // After that, nothing needs a tap: Nib listens for the memory right away, and for "Nib" any time after.
+let greeted = false;
 function begin() {
   if (!$('start') || $('start').hidden) return;
+  if (greeted) {
+    $('start').hidden = true;
+    startEars();
+    voice.say(step === 'room' ? 'Back in the room. Say Nib any time.' : 'I’m listening. Say Nib any time.');
+    return;
+  }
+  greeted = true;
   $('start').hidden = true;
+  $('home').inert = false;
+  $('home').querySelector('[data-focus]')?.focus({ preventScroll: true });
   startEars();
   warmDepth().catch(() => {});
   openWindow(30000, false);
   voice.say(L.greet).then(() => { if (step === 'home' && !collected) openWindow(25000, false); });
 }
 addEventListener('click', begin, { capture: true }); // click (not pointerdown): iOS only unlocks audio on a real activation
-if (params.has('bake')) $('start').hidden = true;
+if (params.has('bake')) { $('start').hidden = true; $('home').inert = false; }
+
+// Leaving (Home, another app, the lock screen): the mic closes and Nib goes quiet. Coming back shows the
+// start screen again, because iPhone needs one tap before sound and the mic can come back.
+function pause() {
+  if ($('start').hidden === false) return;
+  voice.stop();
+  ears?.stop(); ears = null;
+  voice.micOpen = false;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
+  if (music) music.gain.gain.value = 0;
+  windowUntil = 0; collected = '';
+}
+function resume() {
+  if (!$('start').hidden) return;
+  $('go').textContent = 'Tap anywhere to continue';
+  $('start').hidden = false;
+  $('go').focus({ preventScroll: true });
+}
+addEventListener('pagehide', pause);
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else if (!ears && greeted) resume(); });
+addEventListener('pageshow', e => { if (e.persisted && greeted) resume(); });
 
 // ---------- one router for everything heard or typed ----------
 let step = 'home';            // home | asking | building | room
@@ -407,14 +441,13 @@ function placeSound(room) {
   if (at) { p.positionX.value = at.x; p.positionY.value = at.y; p.positionZ.value = at.z; view.hear(ctx()); }
   else { p.positionX.value = 0; p.positionY.value = 0; p.positionZ.value = 0; p.panningModel = 'equalpower'; }
 }
-function setMuted(m) { muted = m; $('mute').setAttribute('aria-pressed', String(!muted)); $('mute').setAttribute('aria-label', muted ? 'Sound off. Turn sound on' : 'Sound on. Turn sound off'); }
+function setMuted(m) { muted = m; $('mute').setAttribute('aria-pressed', String(!muted)); }
 $('mute').onclick = () => setMuted(!muted);
 
 function real(on, speak = false) {
   shown = on;
   $('room').classList.toggle('show-real', on);
   $('tags').inert = !on;
-  $('real').setAttribute('aria-pressed', String(on));
   $('real').textContent = on ? 'Hide labels' : 'Show what’s real';
   $('legend').hidden = !on;
   if (!on) $('tagsheet').hidden = true;
