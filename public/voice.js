@@ -18,8 +18,8 @@ const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो
 // Wake: "Nib" on its own opens listening; "Hey Nib, <question>" asks straight away. A presenter
 // saying "Nib reads the form..." mid-sentence does nothing. Recognizers spell a made-up name many ways.
 // ("Hey, Mib, help." happened on the live site.)
-const WAKE = /^(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nibs|nibbs|knib|nip|neb|nim|mib|neeb|nibe|nieb|nibh|knob)\b/;
-const BARE = /^((hey|hi|hay|ok|okay) )?(nib|nibb|nibs|nibbs|knib|nip|neb|nim|mib|neeb|nibe|nieb|nibh|knob)$/;
+const WAKE = /^(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nibs|nibbs|knib|nip|neb|ned|nid|nim|mib|neeb|nibe|nieb|nibh|knob)\b/;
+const BARE = /^((hey|hi|hay|ok|okay) )?(nib|nibb|nibs|nibbs|knib|nip|neb|ned|nid|nim|mib|neeb|nibe|nieb|nibh|knob)$/;
 // Best built-in voices first: iPhone Premium/Enhanced downloads, then Edge/Chrome neural voices.
 const RANK = [/premium/i, /enhanced/i, /natural|neural/i, /online|google/i, /ava|zoe|samantha|aria|jenny|siri/i];
 const score = v => { const k = RANK.findIndex(r => r.test(v.name)); return k < 0 ? RANK.length : k; };

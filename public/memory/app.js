@@ -135,7 +135,7 @@ function openWindow(ms = 9000, cue = true) {
 // The ears hear "Nib" many ways. A bare "hey" is NOT a wake word: in a busy room people say it all the time.
 // Nib still listens by itself right after it asks or describes something.
 const fixWake = t => t
-  .replace(/^\s*(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nibs|nim|mib|neeb|nibe|nibh|nieb|knib|neb|nip)\b[,.!?]*/i, 'Hey Nib, ')
+  .replace(/^\s*(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nibs|nim|mib|neeb|nibe|nibh|nieb|knib|neb|ned|nid|nip)\b[,.!?]*/i, 'Hey Nib, ')
   .replace(/^Hey Nib,\s*$/, 'Nib');
 
 function heard(text, { typed = false } = {}) {
