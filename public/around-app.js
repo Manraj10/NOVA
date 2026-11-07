@@ -1,18 +1,22 @@
-// Around me: the camera faces where the person faces. Looks go to /api/around back to back (one in
-// flight, ~2-4 s each), and around.js turns them into short spoken news: what's in the way first,
-// then new people, then doors and things. Every news line is made in the natural voice while the page
+// Around me: the camera faces where the person faces. On-device eyes (eyes.js, MediaPipe) spot people
+// and furniture ~10 times a second, so that news is instant; cloud looks (/api/around, ~2-4 s each)
+// add doors, stairs, walls and the scene. around.js turns both into short spoken news: what's in the
+// way first, then new people, then doors and things. Every news line is made in the natural voice while the page
 // loads (allLines), so it plays the instant it's seen. Tap the screen, press the button, or say
 // "what's around me" / "what's going on".
 import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
 import { makeAround, allLines } from './around.js';
+import { makeEyes, LOCAL_NAMES } from './eyes.js';
 
 const $ = id => document.getElementById(id);
 const video = $('video');
 const PHONE = matchMedia('(pointer: coarse)').matches;
 const around = makeAround({ hfov: PHONE ? 50 : 60 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let heading = null, running = false, lastErrorSaid = 0, scene = '', lens = 'main', gen = 0;
+let heading = null, running = false, lastErrorSaid = 0, scene = '', lens = 'main', gen = 0, fov = PHONE ? 50 : 60, eyes = null, seen = [];
+// Load the on-device detector while the start screen is up (7 MB, cached after the first visit).
+const eyesReady = makeEyes().then(e => (eyes = e)).catch(() => null);
 
 voice.init();
 voice.onCaption = text => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
@@ -58,7 +62,8 @@ async function start() {
         if (zoom && zoom.min < 1) { await track.applyConstraints({ advanced: [{ zoom: zoom.min }] }); lens = `zoom ${zoom.min}`; }
       }
     } catch { /* keep the main lens */ }
-    around.hfov = lens === 'main' ? (PHONE ? 50 : 60) : (PHONE ? 85 : 100);
+    fov = lens === 'main' ? (PHONE ? 50 : 60) : (PHONE ? 85 : 100);
+    around.hfov = fov;
     video.srcObject = new MediaStream([track]);
     await video.play();
     if (mic) startEars(mic);
@@ -72,6 +77,20 @@ async function start() {
   speakQueue.busy = true;
   voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START).then(() => { speakQueue.busy = false; speakQueue(); });
   loop(++gen);
+  eyesReady.then(() => requestAnimationFrame(watch));
+}
+
+// ---------- instant news from the on-device eyes ----------
+let lastNews = 0;
+function watch(now) {
+  if (!running) { requestAnimationFrame(watch); return; }
+  const items = eyes?.see(video, now, fov);
+  if (items) {
+    seen = items;
+    drawBoxes(items);
+    if (now - lastNews > 300) { lastNews = now; news(around.update(items, heading)); }
+  }
+  requestAnimationFrame(watch);
 }
 
 async function startEars(mic) {
@@ -114,8 +133,9 @@ async function look() {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   if (j.scene) scene = j.scene;
-  chips(j.items || []);
-  return around.update(j.items || [], h);
+  const extra = (j.items || []).filter(i => !eyes || !LOCAL_NAMES.has(i.name)); // the eyes own people and furniture
+  chips(extra);
+  return around.update(extra, h);
 }
 
 // News waits in a short queue. Old news is dropped (the person has turned since): hazards after 4 s,
@@ -131,26 +151,31 @@ async function speakQueue() {
   speakQueue.busy = false;
 }
 
+// One place where news becomes speech, for both the eyes and the cloud.
+function news({ say, hazard }) {
+  if (hazard) {
+    // In the way: cut whatever is playing, warn with a low tone, then say it first.
+    queue.length = 0;
+    voice.stop();
+    voice.beep(330, 0.22, 0.22);
+    queue.push({ text: say.shift(), at: Date.now() + 250, urgent: true });
+  }
+  for (const text of say) queue.push({ text, at: Date.now() });
+  if (say.length || hazard) speakQueue();
+  $('count').textContent = countText();
+}
+
 async function loop(my) {
   while (running && my === gen) { // a stop/start never leaves two loops running
     try {
-      const { say, hazard } = await look();
+      const result = await look();
       if (my !== gen) return;
-      if (hazard) {
-        // In the way: cut whatever is playing, warn with a low tone, then say it first.
-        queue.length = 0;
-        voice.stop();
-        voice.beep(330, 0.22, 0.22);
-        queue.push({ text: say.shift(), at: Date.now() + 250, urgent: true });
-      }
-      for (const text of say) queue.push({ text, at: Date.now() });
-      speakQueue();
+      news(result);
     } catch {
       if (Date.now() - lastErrorSaid > 20000) { lastErrorSaid = Date.now(); voice.say("I can't reach my eyes right now. Check the internet. I'll keep trying."); }
       await sleep(2000);
     }
-    $('count').textContent = countText();
-    await sleep(150); // the next look starts right away; speech runs alongside
+    await sleep(eyes ? 900 : 150); // with the eyes on, the cloud only adds doors, stairs and the scene
   }
 }
 
@@ -172,6 +197,28 @@ function chips(items) {
     c.append(Object.assign(document.createElement('small'), { textContent: `~${i.steps} step${i.steps === 1 ? '' : 's'}` }));
     box.append(c);
   });
+}
+
+// Live boxes around what the eyes see, mapped onto the contained video picture.
+function drawBoxes(items) {
+  const c = $('boxes'), r = video.getBoundingClientRect(), W = video.videoWidth, H = video.videoHeight;
+  if (!c || !W) return;
+  const dpr = devicePixelRatio || 1;
+  if (c.width !== Math.round(r.width * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
+  const s = Math.min(r.width / W, r.height / H), ox = (r.width - W * s) / 2, oy = (r.height - H * s) / 2;
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, r.width, r.height);
+  g.font = '600 14px -apple-system, Inter, system-ui, sans-serif';
+  for (const i of items) {
+    const b = i.box, x = ox + b.originX * s, y = oy + b.originY * s, w = b.width * s, h = b.height * s;
+    const color = i.inPath ? '#FF453A' : i.kind === 'person' ? '#FFD60A' : '#FFFFFF';
+    g.strokeStyle = color; g.lineWidth = 3;
+    g.beginPath(); g.roundRect(x, y, w, h, 12); g.stroke();
+    const text = `${i.name} · ~${i.steps} step${i.steps === 1 ? '' : 's'}`, tw = g.measureText(text).width + 16;
+    g.fillStyle = color; g.beginPath(); g.roundRect(x, Math.max(0, y - 26), tw, 24, 12); g.fill();
+    g.fillStyle = i.inPath ? '#fff' : '#000'; g.fillText(text, x + 8, Math.max(17, y - 9));
+  }
 }
 
 function tellAll() {
@@ -196,4 +243,4 @@ $('ask').addEventListener('click', e => {
 });
 $('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
 video.addEventListener('click', tellAll);
-window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; } };
+window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
