@@ -23,7 +23,7 @@ function fixture(t,initial={}){
  const S={mode:'start',epoch:1,lang:'en',fields:[],i:0,sim:initial.sim||null};
  const nodes=new Map(),$=key=>{if(!nodes.has(key))nodes.set(key,{value:'',hidden:false,focus(){actions.push('focus:'+key);},setAttribute(){},classList:{add(){},remove(){}}});return nodes.get(key);};
  const video={srcObject:null,play(){order.push({event:'play',audioLive});if(flags.playFail)return Promise.reject(Error('autoplay denied'));return flags.deferPlay?new Promise(resolve=>plays.push(resolve)):Promise.resolve();}};
- const voice={ctx:null,speaking:false,heard:true,echo:()=>false,echoSnapshot:()=>({}),
+ const voice={ctx:null,speaking:false,heard:true,keepAwake(){},echo:()=>false,echoSnapshot:()=>({}),
    say:()=>Promise.resolve(),stop(){},earcon(){},listen(){actions.push('native-fallback');}};
  const scope={S,voice,video,PHONE:false,innerWidth:1200,innerHeight:800,MediaStream:Stream,URLSearchParams,AbortController,
    location:{search:flags.search||'',assign:path=>actions.push('nav:'+path)},app:{dataset:{}},talk:{live:null,auto:0},$,performance:{now:()=>now},
