@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory 3D test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0a09; color: #f3ede4; font: 15px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #log { position: fixed; left: 12px; top: 12px; padding: 8px 12px; background: rgba(0,0,0,.55); border-radius: 10px; white-space: pre; z-index: 2; }
+  canvas { display: block; }
+  .tag { position: fixed; transform: translate(-50%, -100%); padding: 3px 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+  .photo { background: rgba(255,255,255,.85); color: #111; }
+  .memory { background: rgba(255,176,64,.92); color: #111; }
+  .invented { background: rgba(120,120,255,.55); color: #fff; border: 1px dashed #fff; }
+</style>
+</head>
+<body>
+<div id="log">loading…</div>
+<script type="module">
+// Test: one generated memory panorama -> in-browser depth (Depth Anything V2 small) -> a curved 3D room
+// you can look around and step inside, with "photo / memory / invented" tags placed in 3D.
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+import { pipeline, RawImage } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1';
+const log = s => { document.getElementById('log').textContent += '\n' + s; console.log(s); };
+const t0 = performance.now(), secs = () => ((performance.now() - t0) / 1000).toFixed(1) + ' s';
+const PANO = 'google_gemini_3_1_flash_image.png';
+
+const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = PANO; });
+log(`panorama ${img.width}x${img.height} loaded at ${secs()}`);
+let depth;
+for (const device of ['webgpu', 'wasm']) {
+  try {
+    const est = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device, dtype: device === 'webgpu' ? 'fp16' : 'q8' });
+    log(`depth model ready on ${device} at ${secs()}`);
+    const t = performance.now();
+    const out = await est(await RawImage.fromURL(PANO));
+    depth = out.depth; // grayscale RawImage: brighter = closer
+    log(`depth ${depth.width}x${depth.height} in ${((performance.now() - t) / 1000).toFixed(2)} s on ${device}`);
+    window.__depthDevice = device;
+    break;
+  } catch (e) { log(`${device} failed: ${e.message}`); }
+}
+if (!depth) throw new Error('no depth');
+
+// A 200-degree arc of the room around the viewer; each vertex pushed in by depth.
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H); renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+document.body.append(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, W / H, 0.05, 100);
+const ARC = THREE.MathUtils.degToRad(200), R = 4, HEIGHT = R * ARC * img.height / img.width;
+const segX = 320, segY = Math.round(segX * img.height / img.width);
+const geo = new THREE.PlaneGeometry(1, 1, segX, segY), pos = geo.attributes.position, uv = geo.attributes.uv;
+const dAt = (u, v) => depth.data[Math.min(depth.height - 1, Math.floor((1 - v) * depth.height)) * depth.width + Math.min(depth.width - 1, Math.floor(u * depth.width))] / 255;
+for (let i = 0; i < pos.count; i++) {
+  const u = uv.getX(i), v = uv.getY(i);
+  const near = dAt(u, v);                       // 0 far .. 1 near (relative)
+  const r = R * (1 - 0.62 * near);              // pull near things toward the viewer
+  const a = -ARC / 2 + u * ARC;
+  const y = (v - 0.5) * HEIGHT * (r / R);       // keep angular size as things come closer
+  pos.setXYZ(i, Math.sin(a) * r, y, -Math.cos(a) * r);
+}
+geo.computeVertexNormals();
+const tex = new THREE.Texture(img); tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
+scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })));
+scene.fog = new THREE.Fog(0x0b0a09, 3.5, 9);
+
+// Tags from the honesty pass, placed on the mesh where each element is.
+const labels = await fetch('labels.json').then(r => r.json()).catch(() => ({ elements: [] }));
+const tags = labels.elements.map(e => {
+  const [y0, x0, y1, x1] = e.box_2d.map(v => v / 1000), u = (x0 + x1) / 2, v = 1 - (y0 * 0.85 + y1 * 0.15);
+  const near = dAt(u, v), r = R * (1 - 0.62 * near), a = -ARC / 2 + u * ARC;
+  const el = Object.assign(document.createElement('div'), { className: `tag ${e.source}`, textContent: `${e.source === 'photo' ? 'From your photo' : e.source === 'memory' ? 'From your memory' : 'Imagined'}: ${e.name}` });
+  document.body.append(el);
+  return { el, p: new THREE.Vector3(Math.sin(a) * r, (v - 0.5) * HEIGHT * (r / R), -Math.cos(a) * r) };
+});
+
+// Look by dragging; step with WASD / arrows (or auto-walk for the test).
+let yaw = 0, pitch = 0, drag = null;
+addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, yaw, pitch }; });
+addEventListener('pointermove', e => { if (drag) { yaw = drag.yaw - (e.clientX - drag.x) * 0.005; pitch = Math.max(-0.8, Math.min(0.8, drag.pitch - (e.clientY - drag.y) * 0.005)); } });
+addEventListener('pointerup', () => { drag = null; });
+const keys = new Set(); addEventListener('keydown', e => keys.add(e.key)); addEventListener('keyup', e => keys.delete(e.key));
+window.__view = (y, p, x, z) => { yaw = y; pitch = p; camera.position.set(x, 0, z); };
+function frame() {
+  requestAnimationFrame(frame);
+  const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), s = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  if (keys.has('w') || keys.has('ArrowUp')) camera.position.addScaledVector(f, 0.02);
+  if (keys.has('s') || keys.has('ArrowDown')) camera.position.addScaledVector(f, -0.02);
+  if (keys.has('a') || keys.has('ArrowLeft')) camera.position.addScaledVector(s, -0.02);
+  if (keys.has('d') || keys.has('ArrowRight')) camera.position.addScaledVector(s, 0.02);
+  camera.position.clampLength(0, 1.4); // a few steps, not through the walls
+  camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  renderer.render(scene, camera);
+  for (const t of tags) {
+    const q = t.p.clone().project(camera), vis = q.z < 1 && Math.abs(q.x) < 1.1 && Math.abs(q.y) < 1.1;
+    t.el.style.display = vis ? '' : 'none';
+    if (vis) { t.el.style.left = (q.x + 1) / 2 * innerWidth + 'px'; t.el.style.top = (1 - q.y) / 2 * innerHeight + 'px'; }
+  }
+}
+frame();
+log(`3D room ready at ${secs()}  (drag to look, WASD to step)`);
+window.__ready = true;
+</script>
+</body>
+</html>
