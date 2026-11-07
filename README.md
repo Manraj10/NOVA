@@ -1,53 +1,45 @@
 # Nib
 
-A screen reader for paper. Put a paper form under a camera and Nib reads it out loud, talks your fingertip to each blank ("left, down, stop, write your name here"), and reads back what you wrote. Hold the screen or the Space key to ask it anything, like "what does guarantor mean" or "skip this one". Works in English, Spanish, Hindi and Chinese.
+**A screen reader for the physical world.** One voice-first app for blind and low-vision people, with three modes you open by saying "Hey Nib".
 
-Built before NOVA. The rules allow pre-existing code as long as we say so during judging, so say it in the pitch.
+**Live:** https://nibreads.vercel.app. It works best on a phone in Safari or Chrome. Allow the microphone and camera.
 
-## Run it
+| Mode | What it does |
+| --- | --- |
+| **Trace** | Point the phone at a paper form. Nib reads it, then talks your fingertip to each blank ("a little left, down, stop, write your name here") and reads back what you wrote. |
+| **Around me** | Hold the phone at chest height and turn. Nib says where you are ("You're in a classroom with three people") and counts people and obstacles in steps. It beeps faster as you get close, flashes a stairs alarm, and answers questions like "Is there an empty chair?". |
+| **Memory** | Describe a room you remember. Nib builds a 360° room you can look around, marks what came from your words and what it imagined, plays sound that fits, and changes it when you say "make it dark outside". |
 
-Needs Node 20 or newer and Chrome.
+## Talking to Nib
 
-```bash
-npm install
-cp .env.example .env
-npm start
-```
-
-Put the OpenRouter key NOVA emails us into `.env` as `OPENROUTER_KEY=...` (a Gemini, Claude or OpenAI key works too), then open http://localhost:8787.
-
-- **Practice mode, no camera or key needed:** http://localhost:8787/paper.html?sim. The mouse is your fingertip. Tap Space when you finish a field, hold Space to ask a question.
-- **Robot finger test:** http://localhost:8787/paper.html?sim&bot=1 runs a simulated blindfolded user that only hears Nib's words, reacts like a person, and overshoots. Press Space, and `window.nibBot` reports seconds and spoken directions per field. Use the same seed number to compare guidance changes.
-- **Real mode:** a webcam looking straight down at a form taped to the table, about 40 cm up. Rest your index fingertip on the page and Nib guides it.
-
-Never commit `.env`. OpenRouter scans GitHub and kills any key it finds, and the event key may only power Nib itself, not a coding agent.
-
-## Check a real key first
-
-```bash
-npm run check
-```
-
-Sends a webcam-style photo of a 17-field clinic form and two handwriting crops to the real model, then prints how many blanks a guided finger would land on and whether it read the writing right. It ends with GOOD TO DEMO or NOT GOOD ENOUGH. To compare OpenRouter models:
-
-```bash
-npm run check -- google/gemini-3.8-flash anthropic/claude-opus-5.5
-```
-
-Then put the winner in `.env` as `OPENROUTER_MODEL=...`.
-
-## Setting up the camera
-
-- On screen the page must look upright and not mirrored, the way you'd read it. If it doesn't, fix it in the camera app; Nib's "left" and "right" follow the picture.
-- If a finger sits on the blank but Nib never says "stop", open http://localhost:8787/?tol=1.5 to widen the target.
-- Voice: say "done", "repeat" or "skip" on their own, or "Hey Nib, ..." to ask hands-free. Talking near the mic in full sentences won't trigger anything.
+- **"Hey Nib"** (or just "Nib") anywhere. Nib stops talking, chimes and shows a listening orb.
+- **"Hey Nib, open Trace / Around me / Memory"** or **"Hey Nib, go home"**. Each page starts listening by itself, with no tap.
+- Then ask anything: "Where is the signature?", "What's around me?", "Make the walls blue."
+- Ordinary talk near the phone is ignored. The screen stays awake while Nib is open.
 
 ## How it works
 
-- `lib/` sends one photo of the form to a vision model, which returns every field with its box, a label and a plain-words explanation. `lib/ai.js` holds the prompts; `openai.js` (OpenAI and OpenRouter), `gemini.js` and `claude.js` are the providers.
-- `public/app.js` runs the flow: read the form, guide the finger, wait for writing, read the handwriting back, next field.
-- MediaPipe hand tracking finds the fingertip in the browser, so guidance runs locally with no cloud round trip.
-- `public/voice.js` does speech, the distance beeps and voice commands. `public/draw.js` draws the overlay. `public/sim.js` is the practice form.
+- **Ears:** the mic stays open in the browser. A small voice detector cuts each phrase and sends it to Gemini 3.5 Flash Lite for transcription (`public/ears.js`, `lib/hear.js`). The wake word tolerates common mishearings ("Hey Ned", "Hey Mib").
+- **Voice:** gpt-audio-mini reads every line in a warm voice. Each clip is checked against the script, so a voice that changes a word (or any number) falls back to the built-in voice (`lib/speak.js`, `public/voice.js`).
+- **Trace:** Gemini 3.8 Flash finds every field on the form. MediaPipe hand tracking finds your fingertip on the phone, so guidance needs no round trip to the cloud (`public/app.js`, `lib/ai.js`).
+- **Around me:** an on-device object detector (MediaPipe EfficientDet-Lite0) runs about 10 times a second for people, furniture and distance. Every few seconds the cloud adds the place, doors, stairs and answers to questions (`public/around*.js`, `public/eyes.js`).
+- **Memory:** Gemini turns the spoken memory into a scene, Gemini 3.1 Flash Image paints the 360° panorama, Lyria adds music when you name some, and three.js puts you inside it (`public/memory/`, `lib/memory.js`).
+- A dependency-free Node server (`server.js`) serves it locally and on Vercel (`api/index.js`).
+
+Trace was started before NOVA, which the rules allow. Around me, Memory, the shared "Hey Nib" voice layer and the hands-free flow were built at NOVA.
+
+## Run it locally
+
+Needs Node 20 or newer.
+
+```bash
+npm install
+cp .env.example .env   # add OPENROUTER_KEY=...
+npm start              # http://localhost:8787
+```
+
+- Practice mode with no camera or key: http://localhost:8787/paper.html?sim (the mouse is your fingertip).
+- Never commit `.env`.
 
 ## Test
 
@@ -55,4 +47,4 @@ Then put the winner in `.env` as `OPENROUTER_MODEL=...`.
 npm test
 ```
 
-Fakes every AI provider and checks the parse, read and ask routes, model fallbacks, and messy JSON replies. No key needed.
+There are 600 tests, and they need no key: every AI call is faked. `npm run check` runs a real-model accuracy check on sample forms and spends credit.
