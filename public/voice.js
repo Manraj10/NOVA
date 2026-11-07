@@ -155,6 +155,7 @@ export const voice = {
     if (!text) return Promise.resolve();
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
+    if (!cue) this.listeningUi(false); // the reply has started: the listening orb goes away, like Siri
     this.recent = [...(this.recent || []).slice(-5), text]; // for echo()
     this.stop({ resumeEars: false });
     const my = this.seq, token = {};
@@ -265,9 +266,33 @@ export const voice = {
   },
 
   // Listening on: a rising pair. Listening off: the same pair falling.
+  // Listening on/off, on every page: a soft rising (or falling) chime, and a glowing "Listening" orb so
+  // anyone can see Nib heard its name. Every page already calls earcon(true/false) at those moments.
   earcon(up) {
-    this.beep(up ? 620 : 930, 0.07, 0.13);
-    setTimeout(() => this.beep(up ? 930 : 620, 0.09, 0.13), 85);
+    const notes = up ? [523, 659, 784] : [784, 659, 523];
+    notes.forEach((f, k) => setTimeout(() => this.beep(f, 0.11, 0.12), k * 70));
+    this.listeningUi(up);
+  },
+
+  listeningUi(on) {
+    if (typeof document === 'undefined' || !document.body) return;
+    let orb = document.getElementById('nibListening');
+    if (!orb) {
+      const css = document.createElement('style');
+      css.textContent = `#nibListening{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translate(-50%,20px) scale(.9);z-index:9999;display:flex;align-items:center;gap:12px;padding:14px 22px 14px 14px;border-radius:999px;background:rgba(20,20,22,.78);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);border:1px solid rgba(255,255,255,.16);color:#fff;font:600 19px -apple-system,Inter,system-ui,sans-serif;opacity:0;pointer-events:none;transition:opacity .2s,transform .3s cubic-bezier(.32,.72,0,1)}
+#nibListening.on{opacity:1;transform:translate(-50%,0) scale(1)}
+#nibListening i{width:34px;height:34px;border-radius:50%;background:conic-gradient(from var(--a,0deg),#FFD60A,#FF9F0A,#30D158,#64D2FF,#BF5AF2,#FFD60A);animation:nibspin 1.2s linear infinite,nibpulse 1s ease-in-out infinite alternate;box-shadow:0 0 24px rgba(255,214,10,.6)}
+@keyframes nibspin{to{transform:rotate(360deg)}}@keyframes nibpulse{from{scale:.86}to{scale:1.08}}
+@media (prefers-reduced-motion:reduce){#nibListening i{animation:none}}`;
+      document.head.append(css);
+      orb = Object.assign(document.createElement('div'), { id: 'nibListening' });
+      orb.setAttribute('aria-hidden', 'true'); // the chime and the spoken reply carry it for VoiceOver users
+      orb.append(document.createElement('i'), Object.assign(document.createElement('span'), { textContent: 'Listening…' }));
+      document.body.append(orb);
+    }
+    clearTimeout(this.orbTimer);
+    orb.classList.toggle('on', !!on);
+    if (on) this.orbTimer = setTimeout(() => orb.classList.remove('on'), 9000); // never stuck on
   },
 
   heard: !!(window.SpeechRecognition || window.webkitSpeechRecognition),

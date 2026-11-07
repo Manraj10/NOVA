@@ -34,12 +34,12 @@ function onOrient(e) {
   else if (e.absolute && typeof e.alpha === 'number') heading = (360 - e.alpha) % 360;
 }
 
-async function start() {
+async function start(auto = false) {
   if (running) return;
   // Everything that needs the tap happens before the first await.
   voice.unlock();
   warmVoice();
-  const askOrient = window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied'); // must start inside the tap
+  const askOrient = auto ? Promise.resolve('auto') : window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied'); // must start inside the tap
   addEventListener('deviceorientationabsolute', onOrient);
   addEventListener('deviceorientation', onOrient);
   $('start').hidden = true;
@@ -325,7 +325,22 @@ function tellScene() {
   voice.say(scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase())}` : "I'm still looking. Turn slowly.");
 }
 
-$('start').addEventListener('click', start);
+$('start').addEventListener('click', () => start());
+
+// Opened by voice ("Hey Nib, open Around me") there is no tap to start with. iPhone allows sound once
+// the page is capturing the mic, so try to start straight away; if the browser still holds audio back,
+// the "tap anywhere" screen stays as it was.
+async function autoStart() {
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: MIC });
+    voice.unlock();
+    await Promise.race([voice.ctx?.resume?.(), sleep(800)]);
+    const ok = voice.ctx?.state === 'running';
+    probe.getTracks().forEach(t => t.stop());
+    if (ok && !running) start(true);
+  } catch { /* no permission yet or no audio without a tap: the start screen handles it */ }
+}
+autoStart();
 // The button and the picture: what's going on right now, then everything seen so far.
 $('ask').addEventListener('click', e => {
   e.stopPropagation();
@@ -334,6 +349,7 @@ $('ask').addEventListener('click', e => {
   voice.say(`${scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase()).replace(/\.?$/, '.')} ` : ''}${around.summary(heading)}`);
 });
 $('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
-video.addEventListener('click', tellAll);
+// A tap after an automatic start also turns the compass on (iPhone only asks for it inside a tap).
+video.addEventListener('click', () => { window.DeviceOrientationEvent?.requestPermission?.().catch(() => {}); tellAll(); });
 let earsRef = null; // the live listener, so the camera lifecycle can stop it when the page is left
 window.nibAround = { get ears() { return earsRef; }, ask: askAbout, around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
