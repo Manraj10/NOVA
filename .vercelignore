@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules
+research
+tools
+docs
+*.log
+.claude
