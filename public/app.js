@@ -1308,6 +1308,8 @@ async function startEars() {
     isCurrent: sessionCurrent,
     onText: (text, token) => {
       if (voice.echo(text, token.echoContext)) return;
+      const destination = voice.navigation?.(text);
+      if (destination) return onVoiceCommand('nav', destination);
       if (!current(token)) {
         const wake = voice.wake(text);
         if (wake) {
