@@ -89,6 +89,8 @@ function startEars() {
     if (owner !== listenGeneration || leaving || listeningPaused) candidate.stop();
   }).catch(() => {
     if (ears !== candidate || owner !== listenGeneration || leaving || listeningPaused) return;
+    // Ears borrows this stream; Memory must retire it when graph setup fails.
+    autoMic?.getTracks().forEach(t => t.stop()); autoMic = null;
     ears = null; micDenied = true; voice.micOpen = false;
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
     voice.say(L.noMic);
@@ -123,12 +125,16 @@ addEventListener('click', begin, { capture: true }); // click (not pointerdown):
 // Opened by voice ("Hey Nib, open Memory") there's no tap. Like Around me: if the mic is already allowed and
 // sound can start, begin right away; otherwise the "Tap anywhere" screen stays.
 async function autoStart() {
-  if (params.has('bake')) return;
+  if (params.has('bake') || document.hidden) return;
   const owner = listenGeneration;
   try {
     const mic = await voice.autoUnlock(MIC);
     if (!mic) return;
-    if (owner !== listenGeneration || leaving || listeningPaused || $('start').hidden) { mic.getTracks().forEach(t => t.stop()); return; }
+    if (owner !== listenGeneration || leaving || listeningPaused || document.hidden || $('start').hidden) {
+      mic.getTracks().forEach(t => t.stop());
+      if (!ears && !autoMic) voice.micOpen = false; // A late unlock must not leave a false capture flag, or mute a newer owner.
+      return;
+    }
     autoMic = mic; // kept live: stopping it would let iPhone silence the sound again
     begin();
   } catch { /* no permission yet, or no sound without a tap: the start screen handles it */ }
@@ -140,8 +146,8 @@ if (params.has('bake')) { $('start').hidden = true; $('home').inert = false; }
 // Leaving (Home, another app, the lock screen): the mic closes and Nib goes quiet. Coming back shows the
 // start screen again, because iPhone needs one tap before sound and the mic can come back.
 function pause() {
-  if ($('start').hidden === false) return;
   listeningPaused = true; listenGeneration++;
+  if ($('start').hidden === false) return;
   clearCollection();
   voice.stop({ resumeEars: false });
   ears?.stop(); ears = null;
