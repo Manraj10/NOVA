@@ -5,7 +5,7 @@
   "description": "A screen reader for paper: reads a form aloud and guides your hand to every field.",
   "scripts": {
     "start": "node server.js",
-    "test": "node test.js",
+    "test": "node test.js && node --test \"test/*.test.js\"",
     "check": "node check.js"
   },
   "engines": {
