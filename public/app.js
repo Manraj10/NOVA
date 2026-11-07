@@ -44,6 +44,8 @@ const T = {
     offline: 'I can answer that once a model key is added.',
     nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
     takeYou: "I'll take you there.",
+    stillReading: 'Still reading. Long forms take a moment.',
+    almost: 'Almost there. Keep the page still.',
     checking: 'Checking the whole page.',
     missed: (n, l) => (n === 1 ? `One more place: ${l}.` : `${n} more places. First: ${l}.`),
   },
@@ -76,6 +78,8 @@ const T = {
     offline: 'Puedo responder eso cuando se agregue una clave del modelo.',
     nothingToFill: title => `${title}. Aquí no hay nada que llenar. Pregúntame dónde está cualquier cosa, o pídeme que lo lea.`,
     takeYou: 'Te llevo ahí.',
+    stillReading: 'Sigo leyendo. Los formularios largos toman un momento.',
+    almost: 'Ya casi. Mantén la hoja quieta.',
     checking: 'Reviso toda la hoja.',
     missed: (n, l) => (n === 1 ? `Falta un lugar: ${l}.` : `Faltan ${n} lugares. Primero: ${l}.`),
   },
@@ -108,6 +112,8 @@ const T = {
     offline: 'मॉडल की कुंजी जुड़ने पर मैं इसका जवाब दे पाऊँगा।',
     nothingToFill: title => `${title}। यहाँ भरने के लिए कुछ नहीं है। मुझसे पूछिए कि कुछ भी कहाँ है, या पढ़ने को कहिए।`,
     takeYou: 'मैं आपको वहाँ ले चलता हूँ।',
+    stillReading: 'अभी पढ़ रहा हूँ। लंबे फ़ॉर्म में थोड़ा समय लगता है।',
+    almost: 'बस थोड़ा और। पन्ना स्थिर रखिए।',
     checking: 'मैं पूरा पन्ना जाँच रहा हूँ।',
     missed: (n, l) => (n === 1 ? `एक जगह और: ${l}।` : `${n} जगहें और। पहले: ${l}।`),
   },
@@ -140,6 +146,8 @@ const T = {
     offline: '加上模型密钥后我就能回答这个问题。',
     nothingToFill: title => `${title}。这里没有要填的地方。可以问我任何东西在哪里，或者让我读给你听。`,
     takeYou: '我带你过去。',
+    stillReading: '还在读。长表格需要一点时间。',
+    almost: '快好了。请保持纸张不动。',
     checking: '我检查一下整页。',
     missed: (n, l) => (n === 1 ? `还有一处：${l}。` : `还有 ${n} 处。先填：${l}。`),
   },
@@ -238,7 +246,9 @@ function trackHands(now) {
   lastVideoTime = video.currentTime;
   const r = hands.detectForVideo(video, now);
   S.handPts = r.landmarks || [];
+  S.trackN = (S.trackN || 0) + 1;
   if (!S.handPts.length) return;
+  S.handAt = now;
   // While guiding, follow whichever index fingertip is closest to the target.
   const f = S.mode === 'guide' || S.mode === 'find' ? target() : null;
   const a = f ? anchorOf(f) : null;
@@ -300,8 +310,10 @@ function snapshot(region) {
 }
 
 async function api(path, payload) {
+  const t0 = performance.now();
   const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
   const j = await r.json().catch(() => ({}));
+  S.lastApi = { job: path.replace('/api/', ''), secs: (performance.now() - t0) / 1000 };
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status}).`);
   return j;
 }
@@ -339,9 +351,18 @@ async function readForm() {
   renderLists();
   say(t().hold);
   await wait(900); // let the camera settle focus and exposure
+  // A slow read should never be silent: count the seconds on screen and say what's happening.
+  const t0 = performance.now(), told = new Set();
+  const ticker = setInterval(() => {
+    if (S.mode !== 'reading') return;
+    const secs = Math.round((performance.now() - t0) / 1000);
+    $('docTitle').textContent = `Reading… ${secs} s`;
+    if (secs >= 7 && !told.has(7)) { told.add(7); say(t().stillReading, { soft: true }); }
+    if (secs >= 20 && !told.has(20)) { told.add(20); say(t().almost, { soft: true }); }
+  }, 500);
   try {
-    const t0 = performance.now();
-    const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image: snapshot(), lang: S.lang });
+    const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image: snapshot(), lang: S.lang }).finally(() => clearInterval(ticker));
+    clearInterval(ticker);
     S.readSecs = (performance.now() - t0) / 1000; // shown to the room: measured, not claimed
     S.title = out.title || '';
     S.fields = (out.fields || []).map(f => ({ ...f, done: false }));
@@ -855,10 +876,23 @@ function renderLists() {
     const big = document.createElement('strong');
     big.textContent = S.elapsed;
     const small = document.createElement('span');
-    small.textContent = `${filled} of ${S.fields.length} filled without help`;
+    const caught = S.fields.filter(f => f.added).length;
+    small.textContent = `${filled} of ${S.fields.length} filled without help${caught ? ` · final check caught ${caught}` : ''}`;
     foot.append(big, small);
     foot.hidden = false;
   } else foot.hidden = true;
+}
+
+// The judges' readout: is the hand really tracked, and how fast is the AI answering?
+function hud(now) {
+  const secs = (now - (S.hudAt || now)) / 1000 || 1;
+  S.fps = Math.round((S.trackN || 0) / secs);
+  S.trackN = 0;
+  S.hudAt = now;
+  const hands = now - (S.handAt || 0) < 500 ? S.handPts.length : 0;
+  const track = S.sim ? 'Practice mode: the pointer is the fingertip' : `Hand tracking <b>${S.fps} fps</b> · ${hands ? `${hands} ${hands === 1 ? 'hand' : 'hands'} seen` : 'no hand in view'}`;
+  const ai = S.lastApi ? `<br>Last AI call: ${S.lastApi.job} <b>${S.lastApi.secs.toFixed(1)} s</b>` : '';
+  $('panelHud').innerHTML = track + ai;
 }
 
 function status(text) { $('status').textContent = text; }
@@ -882,6 +916,7 @@ function loop(now) {
   else S.prox = 1;
   $('cue').style.setProperty('--close', S.mode === 'guide' || S.mode === 'find' ? (1 - S.prox).toFixed(2) : 0);
   tickWords(now);
+  if (now - (S.hudAt || 0) > 1000) hud(now);
   render(ctx, S, source(), now);
 }
 
@@ -960,6 +995,9 @@ fetch('/api/status').then(r => r.json()).then(s => {
   $('reader').dataset.on = s.reader ? 'true' : 'false';
 }).catch(() => { $('reader').textContent = 'Server not reachable'; });
 
+if (matchMedia('(pointer: coarse)').matches) {
+  document.querySelector('.lede').textContent = document.querySelector('.lede').textContent.replace(' or the Space key', '');
+}
 window.nib = S; // lets you poke at state from the console, at the venue too
 window.nibAsk = answer; // and type a question as if it were spoken (a fallback when the room is too loud)
 if (S.sim) {

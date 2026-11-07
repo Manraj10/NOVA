@@ -95,9 +95,28 @@ export function render(ctx, S, src, now) {
     }
   }
 
+  if (!S.sim && S.handPts?.length && now - (S.handAt || 0) < 300) S.handPts.forEach(h => skeleton(ctx, h, P));
   if (S.tip && now - S.tipSeen < 500 && S.mode !== 'done' && S.mode !== 'check') fingertip(ctx, S, P, now, still);
 
   if (S.mode === 'done' && S.fields.length) finishStamp(ctx, S, R, now, still);
+}
+
+// The live hand: 21 tracked points, drawn faintly so the room can see it's really following the hand.
+const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
+function skeleton(ctx, pts, P) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(247,246,242,.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const [a, b] of BONES) {
+    const [x0, y0] = P(pts[a].x, pts[a].y), [x1, y1] = P(pts[b].x, pts[b].y);
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+  }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(247,246,242,.7)';
+  for (const p of pts) { const [x, y] = P(p.x, p.y); ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
 }
 
 function scan(ctx, frame, p) {
