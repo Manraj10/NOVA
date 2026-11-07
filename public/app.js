@@ -1250,7 +1250,32 @@ function warmVoice() {
 }
 
 function onVoiceCommand(cmd, rest) {
-  if (cmd === 'done') { if (S.mode === 'write') finishWriting(); else if (S.mode === 'confirm') keep(); }
+  if (cmd === 'nav') {
+    const routes = { around: './around.html', memory: './memory.html', home: './' };
+    if (typeof rest !== 'string' || !Object.hasOwn(routes, rest)) return;
+    // End this Paper session before leaving. Late model/ASR results and an old
+    // PTT completion must not act on the next page or reopen browser listening.
+    S.epoch++;
+    S.earsPttGeneration = (S.earsPttGeneration || 0) + 1;
+    S.mode = 'start';
+    S.awaitQ = 0; S.awaitQContext = null; S.earsDelivery = null;
+    clearTimeout(talk.auto);
+    voice.onCommand = null;
+    voice.cloud = false; // remaining warm-up jobs cannot start new network fetches
+    const rec = voice.rec; voice.rec = null;
+    try { rec?.abort(); } catch { /* recognizer already stopped */ }
+    voice.stop({ resumeEars: false });
+    for (const ears of new Set([S.ears, S.earsPending])) ears?.stop();
+    S.ears = null; S.earsPending = null;
+    const live = talk.live; talk.live = null;
+    try { Promise.resolve(live?.stop?.()).catch(() => {}); } catch { /* already stopped */ }
+    for (const track of S.mic?.getTracks?.() || []) {
+      try { track.stop(); } catch { /* capture already ended */ }
+    }
+    S.mic = null; voice.micOpen = false;
+    location.assign(routes[rest]);
+  }
+  else if (cmd === 'done') { if (S.mode === 'write') finishWriting(); else if (S.mode === 'confirm') keep(); }
   else if (cmd === 'redo') redo();
   else if (cmd === 'repeat') repeat();
   else if (cmd === 'skip') skip();
