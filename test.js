@@ -120,6 +120,9 @@ assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
 assert.ok(!seen.some(x => x.body.model === 'dead-model' && !x.body.response_format), 'a dead model is not asked again');
 rejectSchemas = false;
 delete process.env.OPENROUTER_MODEL;
+seen.length = 0;
+await ai.parseForm({ image: IMG, all: true });
+assert.ok(JSON.stringify(seen[0].body).includes('Include places that are already filled in'), 'a re-read after a page move lists filled places too');
 override = { title: 'x', fields: [null, 7, PARSE.fields[0]] };
 assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
 for (const legible of [undefined, null, 'false']) {

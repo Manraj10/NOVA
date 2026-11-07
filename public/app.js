@@ -2,6 +2,7 @@ import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@m
 import { voice } from './voice.js';
 import { render, anchorOf } from './draw.js';
 import { makeSim } from './sim.js';
+import { makeDrift } from './drift.js';
 
 const $ = id => document.getElementById(id);
 const app = $('app'), video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');
@@ -44,6 +45,9 @@ const T = {
     offline: 'I can answer that once a model key is added.',
     nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
     takeYou: "I'll take you there.",
+    moved: "The page moved. Hold still, I'm reading it again.",
+    penOff: 'Move your pen hand off the page for a moment.',
+    holdStill: 'Hold the page still a second.',
     startTab: 'Tap anywhere to start',
     startClick: 'Click anywhere to start',
     noServer: "I can't reach the server. Check the Wi-Fi, then tap to try again.",
@@ -96,6 +100,9 @@ const T = {
     offline: 'Puedo responder eso cuando se agregue una clave del modelo.',
     nothingToFill: title => `${title}. Aquí no hay nada que llenar. Pregúntame dónde está cualquier cosa, o pídeme que lo lea.`,
     takeYou: 'Te llevo ahí.',
+    moved: 'La hoja se movió. No la muevas, la leo otra vez.',
+    penOff: 'Aparta un momento de la hoja la mano del bolígrafo.',
+    holdStill: 'Mantén la hoja quieta un segundo.',
     startTab: 'Toca para empezar',
     startClick: 'Haz clic para empezar',
     noServer: 'No puedo conectar con el servidor. Revisa el wifi y toca para reintentar.',
@@ -148,6 +155,9 @@ const T = {
     offline: 'मॉडल की कुंजी जुड़ने पर मैं इसका जवाब दे पाऊँगा।',
     nothingToFill: title => `${title}। यहाँ भरने के लिए कुछ नहीं है। मुझसे पूछिए कि कुछ भी कहाँ है, या पढ़ने को कहिए।`,
     takeYou: 'मैं आपको वहाँ ले चलता हूँ।',
+    moved: 'पन्ना हिल गया। स्थिर रखिए, मैं फिर से पढ़ता हूँ।',
+    penOff: 'पेन वाला हाथ एक पल के लिए पन्ने से हटाइए।',
+    holdStill: 'एक पल पन्ना स्थिर रखिए।',
     startTab: 'शुरू करने के लिए छुएँ',
     startClick: 'शुरू करने के लिए क्लिक करें',
     noServer: 'सर्वर तक नहीं पहुँच पा रहा। वाई-फ़ाई देखिए, फिर दोबारा टैप कीजिए।',
@@ -200,6 +210,9 @@ const T = {
     offline: '加上模型密钥后我就能回答这个问题。',
     nothingToFill: title => `${title}。这里没有要填的地方。可以问我任何东西在哪里，或者让我读给你听。`,
     takeYou: '我带你过去。',
+    moved: '纸动了。请别动，我再读一遍。',
+    penOff: '请先把拿笔的手从纸上移开一下。',
+    holdStill: '请让纸保持不动一下。',
     startTab: '点击任意处开始',
     startClick: '点击任意处开始',
     noServer: '连不上服务器。请检查无线网络，然后点一下重试。',
@@ -242,6 +255,7 @@ const S = {
   lastSay: '', words: [], wordAt: 0, wordK: -1, boundary: false,
 };
 const t = () => T[S.lang];
+const drift = makeDrift(); // Codex's page-movement guard
 
 // ---------- voice and word-by-word captions ----------
 voice.init();
@@ -422,6 +436,7 @@ function snapshot(region) {
   c.width = Math.round(sw * scale);
   c.height = Math.round(sh * scale);
   c.getContext('2d').drawImage(img, x0, y0, sw, sh, 0, 0, c.width, c.height);
+  if (!region) S.lastFrame = c; // the whole page as it was sent for reading
   return c.toDataURL('image/jpeg', 0.85);
 }
 
@@ -492,6 +507,7 @@ async function readForm() {
   S.reviewFailed = false;
   S.find = null;
   S.readT0 = 0;
+  S.driftOn = false;
   S.pointerLabel = null; // every page starts with a fresh finger check-in (camera only)
   renderLists();
   say(t().hold);
@@ -508,7 +524,8 @@ async function readForm() {
     if (secs >= 20 && !told.has(20)) { told.add(20); say(t().almost, { soft: true }); }
   }, 500);
   try {
-    const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image: snapshot(), lang: S.lang }).finally(() => clearInterval(ticker));
+    const image = snapshot(); // also the frozen reference for the page-movement guard
+    const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image, lang: S.lang }).finally(() => clearInterval(ticker));
     clearInterval(ticker);
     if (ep !== S.epoch) return; // a newer read started meanwhile
     S.readSecs = (performance.now() - t0) / 1000; // shown to the room: measured, not claimed
@@ -516,6 +533,7 @@ async function readForm() {
     S.fields = (out.fields || []).map(f => ({ ...f, done: false }));
     // A menu, letter or receipt with nothing to fill is still worth reading: say what it is and offer "where is…".
     if (!S.fields.length) { setMode('idle'); renderLists(); $('docTitle').textContent = S.title; return say(S.title ? t().nothingToFill(S.title) : t().none); }
+    captureDrift();
     await reveal();
     if (S.sim || S.pointerLabel) activate(0, true);
     else checkin();
@@ -591,6 +609,7 @@ function guide(now) {
   const f = target();
   if (!f) return;
   if (S.mode === 'find' && now - f.at > 30000) return abortFind(t().notFound);
+  if (!pageOk(now)) return;
   if (!S.tip || now - S.tipSeen > 400) {
     S.onTarget = false;
     S.arrivedSince = 0; // a finger that comes back must dwell again, not land on an old timer
@@ -724,6 +743,8 @@ async function finishWriting() {
   if (S.sim) S.sim.write(f);
   else { say(t().lift); await handAway(f); }
   if (stale()) return;
+  if (S.driftOn && (await settlePage()) === 'moved') return stale() ? undefined : pageMoved('read');
+  if (stale()) return;
   const image = snapshot(expand(f));
   readback.show(image, f.label);
   try {
@@ -749,6 +770,110 @@ async function finishWriting() {
     setMode('write');
     setCue('error');
     return speakErr(e);
+  }
+}
+
+// ---------- page movement (Codex's guard in drift.js) ----------
+// Hand outlines in frame fractions, so the guard ignores the printed detail they cover.
+function handRects(now) {
+  if (S.sim || now - (S.handAt || 0) > 300) return [];
+  const c = v => Math.min(1, Math.max(0, v));
+  return S.handPts.map(h => {
+    const xs = h.map(p => c(p.x)), ys = h.map(p => c(p.y));
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    return { x0, y0, x1: Math.max(x0 + 0.002, Math.max(...xs)), y1: Math.max(y0 + 0.002, Math.max(...ys)) };
+  }).map(r => ({ ...r, x1: Math.min(1, r.x1), y1: Math.min(1, r.y1) }));
+}
+
+// Lock onto the page as it was read: the frozen parse frame, around the places to fill.
+function captureDrift() {
+  const shot = S.lastFrame, { w, h } = source(), F = S.fields.filter(f => !f.stale);
+  S.driftOn = false;
+  if (!shot || !w || !h || !F.length) return;
+  const m = 0.06, c = v => Math.min(1, Math.max(0, v));
+  const region = { x0: c(Math.min(...F.map(f => f.x0)) - m), y0: c(Math.min(...F.map(f => f.y0)) - m), x1: c(Math.max(...F.map(f => f.x1)) + m), y1: c(Math.max(...F.map(f => f.y1)) + m) };
+  // ponytail: low-texture pages can't be locked; guidance then runs on the last read (readout: "Page lock: off")
+  S.driftOn = drift.capture({ img: shot, w, h }, region);
+}
+
+// Guidance only steers on a verified page. Unverified: stop, reset the dwell, and say how to fix it.
+function pageOk(now) {
+  if (!S.driftOn) return true;
+  if (drift.moved(source(), handRects(now))) { pageMoved(); return false; }
+  if (drift.verified) { S.pauseSince = 0; return true; }
+  S.arrivedSince = 0;
+  S.onTarget = false;
+  S.prox = 1;
+  if (!S.pauseSince) { S.pauseSince = now; S.pauseSaid = false; setCue(''); }
+  if (!S.pauseSaid && now - S.pauseSince > 700 && !voice.busy()) {
+    S.pauseSaid = true;
+    S.lastCue = 0; // the next direction comes as soon as the page is verified again
+    say(S.handPts.length > 1 && now - (S.handAt || 0) < 300 ? t().penOff : t().holdStill);
+  }
+  return false;
+}
+
+// A checkpoint while the hands are clear: a few fresh looks, 400 ms apart (the guard needs two mismatches).
+async function settlePage() {
+  for (let k = 0; k < 4; k++) {
+    await wait(400);
+    if (drift.moved(source(), handRects(performance.now()))) return 'moved';
+    if (drift.verified) return 'ok';
+  }
+  return 'unknown';
+}
+
+// The page moved: read it again, keep every answer, and carry on from the same place.
+// resume 'read': the person just wrote, so read that field at its new position next.
+async function pageMoved(resume) {
+  const ep = ++S.epoch, cur = S.fields[S.i];
+  S.find = null;
+  S.driftOn = false;
+  S.onTarget = false;
+  S.arrivedSince = 0;
+  S.movedN = (S.movedN || 0) + 1;
+  readback.hide();
+  setMode('reading');
+  renderLists();
+  await say(t().moved);
+  await wait(600); // let the page settle
+  if (ep !== S.epoch) return;
+  S.readT0 = performance.now();
+  try {
+    const image = snapshot();
+    const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image, lang: S.lang, all: true });
+    if (ep !== S.epoch) return;
+    const fresh = (out.fields || []).map(f => ({ ...f, done: false }));
+    const key = f => (f.label || '').trim().toLowerCase();
+    const used = new Set(), merged = [];
+    for (const old of S.fields) {
+      const k = fresh.findIndex((f, j) => !used.has(j) && key(f) === key(old));
+      if (k >= 0) {
+        used.add(k);
+        const { x0, y0, x1, y1, say: line, hint } = fresh[k];
+        merged.push({ ...old, x0, y0, x1, y1, say: line || old.say, hint: hint || old.hint, stale: false });
+      } else if (old.done) merged.push({ ...old, stale: true }); // answer kept; its box is unknown now, so it isn't drawn
+      // an unfilled place the new read can't find is dropped: the final check looks at the whole page
+    }
+    fresh.forEach((f, j) => { if (!used.has(j)) merged.push(f); });
+    S.fields = merged;
+    captureDrift();
+    const i = cur ? S.fields.findIndex(f => f.label === cur.label && !f.done) : -1;
+    if (resume === 'read' && i >= 0) {
+      S.i = i;
+      setMode('write');
+      renderLists();
+      return finishWriting();
+    }
+    const next = i >= 0 ? i : S.fields.findIndex(f => !f.done);
+    if (next < 0) return review();
+    activate(next);
+  } catch (e) {
+    if (ep !== S.epoch) return;
+    setMode('idle');
+    setCue('error');
+    renderLists();
+    speakErr(e);
   }
 }
 
@@ -1198,10 +1323,11 @@ function hud(now) {
   S.hudAt = now;
   const hands = now - (S.handAt || 0) < 500 ? S.handPts.length : 0;
   const row = (k, v, ok = true) => `<span>${k}</span><b${ok ? '' : ' class="warn"'}>${v}</b>`;
+  const lock = S.fields.length ? row('Page lock', !S.driftOn ? 'off' : drift.verified ? 'locked' : 'checking', !S.driftOn || drift.verified) : '';
   const ai = S.lastApi ? row('Last AI call', `${S.lastApi.job} · ${S.lastApi.secs.toFixed(1)} s`) : '';
-  $('panelHud').innerHTML = S.sim ? row('Mode', 'Practice') + row('Fingertip', 'your pointer') + ai
+  $('panelHud').innerHTML = S.sim ? row('Mode', 'Practice') + row('Fingertip', 'your pointer') + lock + ai
     : row('Hand tracking', `${S.fps} fps`, S.fps >= 15) + row('Hands in view', hands || 'none', !!hands)
-      + (S.pointerLabel ? row('Pointing hand', 'locked') : '') + ai;
+      + (S.pointerLabel ? row('Pointing hand', 'locked') : '') + lock + ai;
 }
 
 function status(text) { $('status').textContent = text; }

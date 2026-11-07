@@ -32,7 +32,8 @@ export function makeSim() {
   canvas.width = W;
   canvas.height = H;
   const g = canvas.getContext('2d');
-  const ph = H * 0.94, pw = ph * 8.5 / 11, px = (W - pw) / 2, py = (H - ph) / 2;
+  const ph = H * 0.94, pw = ph * 8.5 / 11;
+  let px = (W - pw) / 2, py = (H - ph) / 2;
   const X = f => px + f * pw, Y = f => py + f * ph;
   const fonts = Promise.all(['600 40px Caveat', '400 20px Arial'].map(f => document.fonts.load(f).catch(() => {})));
   const written = new Set();
@@ -186,6 +187,14 @@ export function makeSim() {
     },
     reset() {
       written.clear();
+      px = (W - pw) / 2;
+      py = (H - ph) / 2;
+      paint();
+    },
+    // Moves the paper by a fraction of the frame, like a pen pushing a real page.
+    nudge(dx, dy) {
+      px += dx * W;
+      py += dy * H;
       paint();
     },
   };

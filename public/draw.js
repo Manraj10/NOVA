@@ -76,7 +76,7 @@ export function render(ctx, S, src, now) {
   // now (spotlit) / next (yellow badge) / later (light outline) / done (green stamp)
   const nextK = !active ? -1 : S.mode === 'find' ? S.i : S.fields.findIndex((f, k) => k > S.i && !f.done);
   S.fields.forEach((f, k) => {
-    if (S.mode === 'reveal' && now < f.revealAt) return;
+    if (f.stale || (S.mode === 'reveal' && now < f.revealAt)) return;
     const r = R(f);
     const pop = S.mode === 'reveal' && !still ? back((now - f.revealAt) / 380) : 1;
     ctx.save();

@@ -30,6 +30,7 @@ export function startBot(S) {
   const act = fn => setTimeout(fn, rand(...REACT));
 
   let last = performance.now(), writeSince = 0;
+  const NUDGE = new URLSearchParams(location.search).has('nudge');
   setInterval(() => {
     const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -48,6 +49,7 @@ export function startBot(S) {
     // "Writes" for a moment, then says done (Space), like a person would.
     if (S.mode === 'write' && writeSince && now - writeSince > 1200) {
       writeSince = 0;
+      if (NUDGE && stats.fields.length === 3 && !stats.nudged) { stats.nudged = true; S.sim.nudge(0.03, 0.025); }
       dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
       dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }));
     }
@@ -65,6 +67,7 @@ export function startBot(S) {
       const s = stats.fields.map(f => f.seconds);
       stats.mean = +(s.reduce((a, b) => a + b, 0) / (s.length || 1)).toFixed(1);
       stats.worst = Math.max(...s);
+      stats.moved = S.movedN || 0;
       console.log('[bot] done', JSON.stringify(stats));
     }
     // Move with a small human wobble, and keep the finger on the page.
