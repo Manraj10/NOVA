@@ -1,6 +1,5 @@
 // Voice in and out. In: hold (or tap) the mic, we record 16 kHz WAV and /api/hear writes the words.
 // Out: /api/speak's warm voice, or the browser's own voice if that fails.
-let stream;
 
 function wav(parts, rate) {
   const n = parts.reduce((a, p) => a + p.length, 0), src = new Float32Array(n);
@@ -18,21 +17,36 @@ function wav(parts, rate) {
   return btoa(bin);
 }
 
+// iPhone: Web Audio obeys the silent switch unless the page says it plays media; while recording it must
+// say play-and-record, and go back to playback after so the sound returns to the loudspeaker.
+const session = type => { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch { } };
+session('playback');
+
 // A mic button: press and hold to talk, or tap once to start and again to stop. onText gets the words.
+// The mic is opened for each recording and closed after it, so iOS never stays in call mode.
 export function micButton(btn, ctx, { onText, onState = () => {} }) {
-  let rec = null, down = 0;
+  let rec = null, down = 0, holding = false, starting = false;
   async function start() {
-    if (rec) return;
-    try { stream ||= await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
-    catch { onState('denied'); return; }
-    await ctx().resume();
-    const c = ctx(), src = c.createMediaStreamSource(stream), proc = c.createScriptProcessor(4096, 1, 1), mute = c.createGain();
+    if (rec || starting) return;
+    starting = true;
+    const c = ctx();
+    c.resume();
+    let stream;
+    try {
+      session('play-and-record');
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch { starting = false; session('playback'); onState('denied'); return; }
+    await c.resume();
+    const src = c.createMediaStreamSource(stream), proc = c.createScriptProcessor(4096, 1, 1), mute = c.createGain();
     mute.gain.value = 0;
     const parts = [];
     proc.onaudioprocess = e => { if (parts.length < 600) parts.push(Float32Array.from(e.inputBuffer.getChannelData(0))); };
     src.connect(proc).connect(mute).connect(c.destination);
-    rec = { parts, stop: () => { src.disconnect(); proc.disconnect(); }, rate: c.sampleRate };
+    rec = { parts, rate: c.sampleRate, stop: () => { src.disconnect(); proc.disconnect(); stream.getTracks().forEach(t => t.stop()); session('playback'); } };
+    starting = false;
     btn.classList.add('live'); onState('listening');
+    // released while the permission prompt was up, after a real hold: that was the whole phrase
+    if (!holding && performance.now() - down > 450) stop();
   }
   async function stop() {
     if (!rec) return;
@@ -47,9 +61,11 @@ export function micButton(btn, ctx, { onText, onState = () => {} }) {
     } catch { /* typing still works */ }
     onState('idle');
   }
-  btn.addEventListener('pointerdown', e => { e.preventDefault(); hush(); down = performance.now(); rec ? stop() : start(); });
-  btn.addEventListener('pointerup', () => { if (rec && performance.now() - down > 450) stop(); });
-  btn.addEventListener('pointerleave', () => { if (rec && performance.now() - down > 450) stop(); });
+  const release = () => { if (holding && rec && performance.now() - down > 450) stop(); holding = false; };
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); hush(); holding = true; down = performance.now(); rec ? stop() : start(); });
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+  btn.addEventListener('pointerleave', release);
   return { stop };
 }
 

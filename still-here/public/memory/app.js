@@ -26,7 +26,8 @@ memoryField.oninput = () => { $('build').disabled = memoryField.value.trim().len
 const NOTE = { listening: 'Listening… let go (or tap) when you’re done.', hearing: 'Writing it down…', denied: 'The microphone is blocked. You can type instead.', idle: 'Hold to talk, or tap to start and again to stop.' };
 micButton($('mic1'), ctx, { onText: t => converse(t), onState: s => { $('note1').textContent = NOTE[s]; } });
 $('typeForm').onsubmit = e => { e.preventDefault(); const t = memoryField.value.trim(); if (t.length >= 4) converse(t); };
-$('talkBack').onclick = () => { hush(); run++; show('home'); };
+const abandon = () => { hush(); answerWait?.(''); run++; };
+$('talkBack').onclick = () => { abandon(); show('home'); };
 
 // ---------- 2. a short conversation, then the build ----------
 let run = 0, answerWait = null;
@@ -46,7 +47,7 @@ function askAloud(question, wait = 60000) {
   say(question, ctx);
   return new Promise(ok => {
     const t = setTimeout(() => done(''), wait);
-    function done(v) { clearTimeout(t); answerWait = null; $('answerSheet').hidden = true; if (v) bubble('you', v); ok(v); }
+    function done(v) { clearTimeout(t); if (answerWait !== done) return ok(''); answerWait = null; $('answerSheet').hidden = true; if (v) bubble('you', v); ok(v); }
     answerWait = done;
   });
 }
@@ -59,7 +60,7 @@ async function converse(memory) {
   ctx().resume();
   const me = ++run;
   memoryField.value = ''; memoryField.oninput();
-  $('chat').innerHTML = ''; $('waitimg').hidden = true; $('clock').textContent = '';
+  $('chat').innerHTML = ''; $('waitimg').hidden = true; $('clock').textContent = ''; $('answerSheet').hidden = true; $('answer').value = '';
   show('talk');
   bubble('you', memory);
   const answers = [];
@@ -99,7 +100,7 @@ async function build(memory, answers, me, asked = []) {
     const a2P = api('ask', { memory, answers, asked }).then(r => me === run ? askAloud(r.question, 25000) : '').catch(() => '');
     const front = await frontP;
     st.done('scene');
-    if (me !== run) return;
+    if (me !== run) return clearInterval(tick);
     $('waitimg').src = front.src; $('waitimg').hidden = false;
     const frontJpg = shrink(front, 1600, 0.88);
     const spec = await specP;
@@ -113,7 +114,7 @@ async function build(memory, answers, me, asked = []) {
     st.go('back');
     const back = await paintBack(front, spec);
     st.done('back');
-    if (me !== run) return;
+    if (me !== run) return clearInterval(tick);
     const { loop, L, s, w } = makeLoop(front, back);
     st.go('depth');
     let depth = null;
@@ -134,9 +135,10 @@ async function build(memory, answers, me, asked = []) {
   } catch (e) {
     clearInterval(tick);
     console.warn(e);
+    if (me !== run) return;
     const li = bubble('nib', `Something went wrong: ${e.message} Tap here to try again.`);
     li.tabIndex = 0; li.style.cursor = 'pointer';
-    li.onclick = () => build(memory, answers, me, asked);
+    li.onclick = () => { li.onclick = null; build(memory, answers, ++run, asked); };
     say('Something went wrong. Tap the message to try again.', ctx);
   }
 }
@@ -200,13 +202,15 @@ async function enter(room, { changed = false } = {}) {
   if (music && current === room) music.gain.gain.setTargetAtTime(muted ? 0 : 0.85, ctx().currentTime, 0.8);
 }
 
-let muted = false;
+let muted = false, soundTok = 0;
 async function startSound(room) {
+  const tok = ++soundTok;
   music?.stop(); music = null;
   if (!room.sound) { $('mute').hidden = true; return; }
   $('mute').hidden = false;
   try {
     const c = ctx(), buf = await c.decodeAudioData(await (await fetch(room.sound)).arrayBuffer());
+    if (tok !== soundTok || current !== room) return;
     const src = c.createBufferSource(), gain = c.createGain(), pan = c.createPanner();
     pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = 1.2; pan.rolloffFactor = 0.8;
     src.buffer = buf; src.loop = true; gain.gain.value = 0;
@@ -285,18 +289,20 @@ async function change(text) {
       tags: lab ? tagsFrom(lab, { L, s, w }) : room.tags,
     };
     next.soundFrom = next.tags.find(t => lab?.sound_from && t.name === lab.sound_from) || room.soundFrom;
-    window.__lastRoom = next;
     changing = false;
+    if (current !== room) return;
+    window.__lastRoom = next;
     enter(next, { changed: true });
   } catch (e) {
     changing = false;
     console.warn(e);
+    if (current !== room) return;
     $('caption').textContent = 'I couldn’t change it that time. Hold the button and try again.';
     say($('caption').textContent, ctx);
   }
 }
 
-$('leave').onclick = () => { hush(); music?.stop(); music = null; view?.tiltOff(); current = null; run++; show('home'); };
+$('leave').onclick = () => { abandon(); soundTok++; music?.stop(); music = null; view?.tiltOff(); current = null; show('home'); };
 $('mute').onclick = () => {
   muted = !muted;
   music?.gain.gain.setTargetAtTime(muted ? 0 : 0.85, ctx().currentTime, 0.2);
@@ -335,7 +341,7 @@ $('example').onclick = async () => {
     const [pano, depthImg, front, back] = await Promise.all(['hero/pano.jpg', 'hero/depth.png', 'hero/front.jpg', 'hero/back.jpg'].map(u => load(u).catch(() => null)));
     const room = { ...meta, pano: toCanvas(pano), depth: depthImg && toCanvas(depthImg), sound: 'hero/sound.mp3', front, back, frontJpg: front && shrink(front, 1600, 0.88) };
     room.soundFrom = room.tags.find(t => t.name === meta.soundFromName) || null;
-    run++;
+    abandon();
     enter(room);
   } catch (e) { console.warn(e); say('The example isn’t ready yet.', ctx); }
   $('example').textContent = 'Try the example';

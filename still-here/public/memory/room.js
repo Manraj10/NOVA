@@ -7,18 +7,20 @@ let estimator;
 // Depth for the loop, wrapped so the 360 seam has no jump. Returns { w, h, at(u, v) -> 0 far .. 1 near }.
 export async function depthOf(loop, onStatus = () => {}) {
   const { pipeline, RawImage } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1');
+  const make = device => pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device, dtype: device === 'webgpu' ? 'fp16' : 'q8' });
   for (const device of estimator ? [] : ['webgpu', 'wasm']) {
-    try { estimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { device, dtype: device === 'webgpu' ? 'fp16' : 'q8' }); break; }
+    try { estimator = await make(device); break; }
     catch (e) { console.warn('depth', device, e); }
   }
   if (!estimator) throw new Error('No depth model');
   onStatus();
+  const run = async img => { try { return await estimator(img); } catch (e) { console.warn('depth run failed, retrying on wasm', e); estimator = await make('wasm'); return estimator(img); } };
   const L = loop.width, h = loop.height, pad = Math.round(L * 0.1);
   const c = Object.assign(document.createElement('canvas'), { width: L + 2 * pad, height: h }), x = c.getContext('2d');
   x.drawImage(loop, L - pad, 0, pad, h, 0, 0, pad, h);
   x.drawImage(loop, pad, 0);
   x.drawImage(loop, 0, 0, pad, h, L + pad, 0, pad, h);
-  const { depth } = await estimator(await RawImage.fromCanvas(c));
+  const { depth } = await run(await RawImage.fromCanvas(c));
   // crop the padding back off into a plain gray canvas we can save and reuse
   const k = depth.width / c.width, out = Object.assign(document.createElement('canvas'), { width: Math.round(L * k), height: depth.height });
   const id = out.getContext('2d').createImageData(out.width, out.height), x0 = Math.round(pad * k);
