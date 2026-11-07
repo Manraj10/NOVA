@@ -26,6 +26,8 @@ const T = {
     stop: 'Stop.',
     coach: 'Write just to the right of your finger. Say done, or tap, when you finish.',
     coachTap: 'Write just to the right of your finger. Tap the screen when you finish.',
+    ruler: 'Tip: slide a ruler or a card up until its edge touches your fingertip, and write along the edge. I will also tell you if your writing drifts.',
+    lineEnd: 'End of the line.',
     lift: 'Lift your hand so I can read it.',
     wrote: t => `You wrote ${t}.`,
     blank: 'That spot still looks empty.',
@@ -84,6 +86,8 @@ const T = {
     stop: 'Alto.',
     coach: 'Escribe justo a la derecha de tu dedo. Di listo, o toca, cuando termines.',
     coachTap: 'Escribe justo a la derecha de tu dedo. Toca la pantalla cuando termines.',
+    ruler: 'Consejo: sube una regla o una tarjeta hasta que su borde toque la punta de tu dedo, y escribe sobre el borde. También te aviso si tu escritura se desvía.',
+    lineEnd: 'Fin de la línea.',
     lift: 'Levanta la mano para que pueda leerlo.',
     wrote: t => `Escribiste ${t}.`,
     blank: 'Ese espacio todavía parece vacío.',
@@ -142,6 +146,8 @@ const T = {
     stop: 'रुकिए।',
     coach: 'अपनी उंगली के ठीक दाईं ओर लिखिए। पूरा होने पर हो गया बोलिए या टैप कीजिए।',
     coachTap: 'अपनी उंगली के ठीक दाईं ओर लिखिए। पूरा होने पर स्क्रीन पर टैप कीजिए।',
+    ruler: 'सुझाव: एक रूलर या कार्ड को ऊपर सरकाइए जब तक उसका किनारा आपकी उंगली की नोक को न छू ले, और उसी किनारे के साथ लिखिए। लिखावट भटकेगी तो मैं बता दूँगा।',
+    lineEnd: 'लाइन खत्म।',
     lift: 'हाथ हटाइए ताकि मैं पढ़ सकूँ।',
     wrote: t => `आपने लिखा: ${t}।`,
     blank: 'वह जगह अभी भी खाली लगती है।',
@@ -200,6 +206,8 @@ const T = {
     stop: '停。',
     coach: '在手指右边写。写完说好了，或者点一下。',
     coachTap: '在手指右边写。写完点一下屏幕。',
+    ruler: '小提示：把尺子或卡片往上推，直到边缘碰到指尖，然后沿着边缘写。字写歪了我也会提醒你。',
+    lineEnd: '这一行到头了。',
     lift: '请把手移开，让我看一下。',
     wrote: t => `你写的是：${t}。`,
     blank: '这里看起来还是空的。',
@@ -662,6 +670,47 @@ function guide(now) {
   }
 }
 
+// ---------- stay on the line ----------
+// A blind writer can't see the blank, so handwriting drifts up or down and runs past its end.
+// While writing, follow the pen hand (gripping, not the resting pointer). Its height over the first
+// strokes is the baseline; drifting more than half a line off it says "a little up/down" once, then
+// a soft two-note tone repeats (rising: go up, falling: go down) until the pen is back. Reaching the
+// end of the blank is said once. The pen point is estimated from thumb and index tips; only the
+// change from the baseline matters, so a constant offset to the real nib cancels out.
+// ponytail: an axis-aligned blank, so a page tilted several degrees shifts the line along its length.
+function penPoint(now) {
+  if (now - (S.handAt || 0) > 250) return null;
+  const H = S.handPts;
+  let k = H.findIndex((h, i) => i !== S.pointerIdx && pinching(h));
+  if (k < 0 && H.length === 1 && S.pointerIdx < 0) k = 0; // only the pen hand is in view
+  if (k < 0) return null;
+  const h = H[k];
+  return { x: (h[4].x + h[8].x) / 2, y: (h[4].y + h[8].y) / 2 };
+}
+
+function keepLine(now) {
+  const f = S.fields[S.i];
+  if (!f || f.kind === 'checkbox' || f.kind === 'button' || voice.speaking) return;
+  const p = penPoint(now);
+  if (!p || p.x < f.x0 - 0.03 || p.x > f.x1 + 0.08 || Math.abs(p.y - f.y1) > (f.y1 - f.y0) * 3 + 0.03) return;
+  const L = (S.line ||= { y: p.y, n: 0, at: now, off: 0, said: 0, beat: 0, end: false });
+  L.y += (p.y - L.y) * 0.15; // smooth out the up-and-down of letters
+  if (L.n < 18) { L.n++; L.base = L.y; return; } // the first ~0.6 s of strokes set the baseline
+  const lineH = Math.max(f.y1 - f.y0, 0.015), drift = L.y - L.base; // + is lower on the page
+  const off = Math.abs(drift) > lineH * 0.5 ? Math.sign(drift) : 0;
+  if (off !== L.off) { L.off = off; L.since = now; L.said = 0; if (!off) voice.beep(880, 0.04, 0.05); }
+  if (off && now - L.since > 400) {
+    const dir = off > 0 ? 'up' : 'down';
+    if (!L.said) { L.said = now; say(voice.cueWord(dir, true), { cue: true }); }
+    else if (now - L.beat > 900) {
+      L.beat = now;
+      voice.beep(dir === 'up' ? 520 : 780, 0.07, 0.07);
+      setTimeout(() => voice.beep(dir === 'up' ? 780 : 520, 0.09, 0.07), 90);
+    }
+  }
+  if (!L.end && p.x > f.x1 - 0.01) { L.end = true; say(t().lineEnd, { cue: true }); }
+}
+
 // ponytail: venue knob. ?tol=1.5 widens the "you're there" zone when fingertip jitter in bad light
 // keeps a finger from ever settling inside it.
 const TOL = Math.min(3, Math.max(0.5, Number(new URLSearchParams(location.search).get('tol')) || (S.sim ? 1 : 1.3))); // real tracking jitters more than a mouse
@@ -749,7 +798,9 @@ function arrive(f) {
   const coached = S.fields.some(x => x.done && !x.skipped);
   const stop = S.stopSaid ? '' : `${t().stop} `;
   S.stopSaid = false;
-  say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${IOS ? t().coachTap : t().coach}`}`);
+  say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${IOS ? t().coachTap : t().coach}`}`)
+    .then(() => { if (!coached && !S.sim && S.mode === 'write' && !S.rulerSaid) { S.rulerSaid = true; say(t().ruler, { soft: true }); } });
+  S.line = null; // a fresh blank: learn the writing height again
 }
 
 async function finishWriting() {
@@ -1438,6 +1489,7 @@ function loop(now) {
   trackHands(now);
   if ((S.mode === 'guide' || S.mode === 'find') && !app.dataset.talk) guide(now); // guidance pauses while you talk
   else if (S.mode === 'checkin' && !app.dataset.talk) checkinTick(now);
+  else if (S.mode === 'write' && !S.sim) keepLine(now);
   else S.prox = 1;
   $('cue').style.setProperty('--close', S.mode === 'guide' || S.mode === 'find' ? (1 - S.prox).toFixed(2) : 0);
   tickWords(now);
