@@ -9,9 +9,10 @@
 // while it builds, or a change to the room. Short whole phrases are commands anywhere ("describe the room",
 // "show what's real", "start over", "home", "paper", "around me").
 import { voice } from '../voice.js';
-import { makeEars } from '../ears.js';
+import { makeEars, MIC } from '../ears.js';
 import { load, shrink, stripInput, makeLoop, equirect, placeholderBack } from './pano.js';
 import { depthOf, makeRoom, warmDepth } from './room.js';
+import { ambience, MUSIC } from './ambience.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -96,9 +97,24 @@ function begin() {
   startEars();
   warmDepth().catch(() => {});
   openWindow(30000, false);
-  voice.say(L.greet).then(() => { if (step === 'home' && !collected) openWindow(25000, false); });
+  voice.say(L.greet).then(() => { if (step === 'home' && !collected) openWindow(25000); });
 }
 addEventListener('click', begin, { capture: true }); // click (not pointerdown): iOS only unlocks audio on a real activation
+// Opened by voice ("Hey Nib, open Memory") there's no tap. Like Around me: if the mic is already allowed and
+// sound can start, begin right away; otherwise the "Tap anywhere" screen stays.
+async function autoStart() {
+  if (params.has('bake')) return;
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: MIC });
+    voice.unlock();
+    await Promise.race([voice.ctx?.resume?.(), sleep(800)]);
+    const ok = voice.ctx?.state === 'running';
+    probe.getTracks().forEach(t => t.stop());
+    if (ok && !$('start').hidden) begin();
+  } catch { /* no permission yet, or no sound without a tap: the start screen handles it */ }
+}
+autoStart();
+$('go').focus({ preventScroll: true }); // VoiceOver lands on "Tap anywhere to start"
 if (params.has('bake')) { $('start').hidden = true; $('home').inert = false; }
 
 // Leaving (Home, another app, the lock screen): the mic closes and Nib goes quiet. Coming back shows the
@@ -110,7 +126,7 @@ function pause() {
   voice.micOpen = false;
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
   if (music) music.gain.gain.value = 0;
-  windowUntil = 0; collected = '';
+  windowUntil = 0; collected = ''; orb = false; voice.listeningUi?.(false);
 }
 function resume() {
   if (!$('start').hidden) return;
@@ -127,9 +143,18 @@ let step = 'home';            // home | asking | building | room
 let windowUntil = 0, collected = '', commitTimer = null;
 const norm = t => String(t).toLowerCase().replace(/[.,!?"“”'’]/g, '').replace(/\s+/g, ' ').trim();
 
+// cue: the rising chime and the "Listening…" orb (voice.earcon). Windows opened just before Nib speaks (so you
+// can talk over it) stay silent; voice.say hides the orb when a reply starts.
+let orb = false;
 function openWindow(ms = 9000, cue = true) {
   windowUntil = performance.now() + ms;
-  if (cue) voice.earcon(true);
+  if (cue && !orb) { voice.earcon(true); orb = true; }
+}
+function closeWindow() {
+  windowUntil = 0;
+  if (!orb) return;
+  orb = false;
+  if (voice.speaking) voice.listeningUi?.(false); else voice.earcon(false);
 }
 
 // The ears hear "Nib" many ways. A bare "hey" is NOT a wake word: in a busy room people say it all the time.
@@ -146,20 +171,21 @@ function heard(text, { typed = false } = {}) {
   const wake = voice.wake(text);
   let words = text;
   if (wake) {
-    if (!wake.rest) { voice.stop(); return openWindow(); }
+    voice.stop();
+    if (!wake.rest) { orb = false; return openWindow(); }
     words = wake.rest;
   } else if (!typed && performance.now() > windowUntil && !collected) {
     if (voice.speaking && /^(stop|quiet|be quiet|pause|shh+|hush)$/.test(norm(words))) { voice.stop(); openWindow(); }
     return; // not meant for Nib
   }
   const cmd = command(norm(words));
-  if (cmd) { collected = ''; windowUntil = 0; return cmd(); }
+  if (cmd) { collected = ''; closeWindow(); return cmd(); }
   if (typed) return commit(words);
   // speech arrives a phrase at a time: keep collecting until a short silence, then act on all of it
   collected = collected ? `${collected} ${words}` : words;
   windowUntil = performance.now() + 1800;
   clearTimeout(commitTimer);
-  const check = () => { if (ears?.busy || performance.now() < windowUntil) commitTimer = setTimeout(check, 400); else { const t = collected; collected = ''; windowUntil = 0; commit(t); } };
+  const check = () => { if (ears?.busy || performance.now() < windowUntil) commitTimer = setTimeout(check, 400); else { const t = collected; collected = ''; closeWindow(); commit(t); } };
   commitTimer = setTimeout(check, 1300);
 }
 
@@ -179,7 +205,7 @@ function command(t) {
   if (step === 'home' && /^(try|open|show me) the example$|^example$/.test(t)) return () => openExample();
   if (step === 'building' && /^(is it (ready|done)|how long|are you done|whats happening)$/.test(t)) return () => voice.say(L.almost);
   if (step !== 'room') return null;
-  if (/^(yes|yeah|yep|yup|yes it is|thats (right|it)|perfect|correct|exactly|thanks|thank you|ok|okay|good|great|nice|beautiful|wow|its perfect)$/.test(t)) return () => voice.say(L.glad).then(() => openWindow(6000, false));
+  if (/^(yes|yeah|yep|yup|yes it is|thats (right|it)|perfect|correct|exactly|thanks|thank you|ok|okay|good|great|nice|beautiful|wow|its perfect)$/.test(t)) return () => voice.say(L.glad);
   if (/^(no|nope|not quite|not really|thats wrong|wrong|its wrong)$/.test(t)) return () => voice.say(L.what).then(() => openWindow(14000));
   if (/^(describe( the room| it)?|what(s| is) (here|around me|in the room)|where am i|tell me again|repeat( that)?|say (that|it) again)$/.test(t)) return describeAgain;
   if (/^(show (me )?what(s| is) real|what(s| is) real|show (the )?labels)$/.test(t)) return () => real(true, true);
@@ -199,7 +225,7 @@ function go(dest) {
 function bindTalk(btn) {
   btn.addEventListener('click', () => {
     startEars();
-    if (collected) { windowUntil = 0; return; } // finish now
+    if (collected) { windowUntil = performance.now(); return; } // finish now
     voice.stop();
     openWindow(10000);
   });
@@ -208,6 +234,7 @@ function bindTalk(btn) {
 // listening shows on the button; music ducks under Nib's voice and while you talk
 setInterval(() => {
   const open = performance.now() < windowUntil || !!collected;
+  if (!open && orb && !ears?.busy) closeWindow();
   for (const id of ['mic1', 'mic2', 'mic3']) { $(id).classList.toggle('live', open); $(id).setAttribute('aria-pressed', String(open)); }
   if (screen() === 'home' && open && !voice.speaking && ears) $('note1').textContent = collected ? `“${collected}”` : 'Listening…';
   if (music) music.gain.gain.setTargetAtTime(muted ? 0 : voice.speaking || open ? 0.18 : 0.8, ctx().currentTime, 0.25);
@@ -232,7 +259,7 @@ function startOver() {
   soundTok++; music?.stop(); music = null; view?.tiltOff();
   step = 'home';
   show('home');
-  voice.say(L.over).then(() => { if (step === 'home') openWindow(12000, false); });
+  voice.say(L.over).then(() => { if (step === 'home') openWindow(12000); });
 }
 $('talkBack').onclick = startOver;
 $('leave').onclick = startOver;
@@ -290,7 +317,8 @@ async function build(memory, me) {
     st.go('labels');
     const labelsP = api('labels', { scene: frontJpg, spec }).then(r => (st.done('labels'), r)).catch(e => (st.bad('labels', 'skipped'), console.warn(e), null));
     st.go('sound');
-    const soundP = api('sound', { memory: spec.sound_prompt }).then(r => (st.done('sound'), 'data:audio/mpeg;base64,' + r.audio)).catch(e => (st.bad('sound', 'skipped'), console.warn(e), null));
+    const wantsMusic = MUSIC.test(spec.memory || said);
+    const soundP = (wantsMusic ? api('sound', { spec }) : Promise.resolve(null)).then(r => (st.done('sound'), 'data:audio/mpeg;base64,' + r.audio)).catch(e => (st.bad('sound', 'skipped'), console.warn(e), null));
     // You step inside as soon as the front and its labels are ready. The walls behind you start as a soft
     // continuation of the front and fill in when painted (a few seconds later); then the room takes its depth.
     st.go('back');
@@ -302,6 +330,7 @@ async function build(memory, me) {
       spec, front, back: null, frontJpg, pano: equirect(loop0), depth: null,
       title: lab?.title || spec.title || 'Your room', narration: lab?.narration || '', describe: lab?.describe || '',
       tags: tagsFrom(lab, { L: len, s, w }), faceU: (w / 2 - s) / len, sound: null, sid: me,
+      ambient: [spec.memory || said, spec.room, spec.time, ...(spec.sounds || [])].filter(Boolean).join(' '),
     };
     clearTimeout(nudge);
     fillBehind(room, front, backP, st);
@@ -395,7 +424,7 @@ async function enter(room, { changed = false } = {}) {
     t.el = b;
   }
   real(shown);
-  if (!changed || !music) await startSound(room);
+  if (!changed || !music || !room.sound) await startSound(room); // the room's own sound follows each change
   else placeSound(room);
   await sleep(changed ? 100 : 900);
   if (current !== room) return;
@@ -418,17 +447,26 @@ let muted = false, soundTok = 0;
 async function startSound(room) {
   const tok = ++soundTok;
   music?.stop(); music = null;
-  $('mute').hidden = !room.sound;
-  if (!room.sound) return;
+  $('mute').hidden = !room.sound && !room.ambient;
+  if (!room.sound && !room.ambient) return;
   try {
-    const c = ctx(), buf = await c.decodeAudioData(await (await fetch(room.sound)).arrayBuffer());
-    if (tok !== soundTok || current !== room) return;
-    const src = c.createBufferSource(), gain = c.createGain(), pan = c.createPanner();
+    const c = ctx(), gain = c.createGain(), pan = c.createPanner();
     pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = 1.2; pan.rolloffFactor = 0.8;
-    src.buffer = buf; src.loop = true; gain.gain.value = 0;
-    src.connect(pan).connect(gain).connect(c.destination);
-    src.start();
-    music = { stop: () => { try { src.stop(); } catch { } }, gain, pan };
+    gain.gain.value = 0;
+    pan.connect(gain).connect(c.destination);
+    let stop;
+    if (room.sound) {
+      const buf = await c.decodeAudioData(await (await fetch(room.sound)).arrayBuffer());
+      if (tok !== soundTok || current !== room) return;
+      const src = c.createBufferSource();
+      src.buffer = buf; src.loop = true; src.connect(pan); src.start();
+      stop = () => { try { src.stop(); } catch { } };
+    } else {
+      const amb = ambience(c, room.ambient); // the room's own sound, all around you
+      amb.out.connect(pan);
+      stop = amb.stop;
+    }
+    music = { stop, gain, pan };
     placeSound(room);
     $('mute').setAttribute('aria-pressed', String(!muted));
   } catch (e) { console.warn('sound', e); }
@@ -499,12 +537,13 @@ async function change(text) {
     const front = await load(r.image);
     const frontJpg = shrink(front, 1600, 0.88);
     const labP = api('labels', { scene: frontJpg, spec }).catch(() => null);
+    const soundP = MUSIC.test(text) && !room.sound ? api('sound', { spec }).then(r => 'data:audio/mpeg;base64,' + r.audio).catch(() => null) : Promise.resolve(null);
     const backP = paintBack(front, spec).catch(() => room.back);
     const lab = await labP;
     const { loop, L: len, s, w } = makeLoop(front, placeholderBack(front));
     clearInterval(tick);
     const next = {
-      ...room, spec, front, frontJpg, pano: equirect(loop), depth: room.depth, clips: null,
+      ...room, spec, front, frontJpg, pano: equirect(loop), depth: room.depth, clips: null, ambient: `${room.ambient || ''} ${text}`,
       title: lab?.title || room.title, narration: lab?.narration || room.narration, describe: lab?.describe || '',
       tags: lab ? tagsFrom(lab, { L: len, s, w }) : room.tags,
     };
@@ -512,6 +551,7 @@ async function change(text) {
     changing = false;
     if (current !== room) return;
     window.__lastRoom = next;
+    soundP.then(snd => { if (!snd) return; next.sound = snd; if (current === next) startSound(next); });
     enter(next, { changed: true });
     fillBehind(next, front, backP);
   } catch (e) {

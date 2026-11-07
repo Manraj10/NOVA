@@ -101,3 +101,21 @@ test('sound: collects the streamed mp3 and retries once when Lyria sends nothing
   assert.equal(n, 2);
   assert.equal(Buffer.from(s.audio, 'base64').length, 4000);
 });
+
+test('sound prompt: music only when the person named it, made for that place and era; otherwise no music at all', async () => {
+  const { soundPrompt } = await import('../lib/memory.js');
+  const radio = soundPrompt({ spec: { memory: 'grandma making rotis, the radio playing old songs', room: 'a 1970s Punjabi kitchen', time: 'winter dusk', sounds: ['tawa sizzling'] } });
+  assert.match(radio, /They named music/);
+  assert.match(radio, /1970s Punjabi kitchen/);
+  assert.match(radio, /tawa sizzling/);
+  const study = soundPrompt({ spec: { memory: 'my dad typing in his study, the ceiling fan turning', room: 'a Delhi study' } });
+  assert.match(study, /NO music at all/);
+  assert.doesNotMatch(study, /They named music/);
+  assert.equal(soundPrompt({ memory: '' }), '');
+});
+
+test('the browser side agrees on what counts as music', async () => {
+  const { MUSIC } = await import('../public/memory/ambience.js');
+  for (const t of ['the radio was on', 'she was singing', 'an old record player', 'harmonium in the corner']) assert.ok(MUSIC.test(t), t);
+  for (const t of ['rain on the window', 'the ceiling fan turning', 'a ticking clock', 'my parents on the sofa']) assert.ok(!MUSIC.test(t), t);
+});
