@@ -77,7 +77,7 @@ function start() {
 // their controller from startEars allows pagehide to abort its pending queue.
 let cameraStarting = null, cameraRecovering = null, cameraLifecycle = 0;
 let cameraHadStarted = false, cameraWatchStarted = false, cameraResumeWanted = false;
-let cameraEars = null, cameraBoundMic = null, cameraOrientationTimer = null;
+let cameraEars = null, cameraBoundMic = null, cameraMicBinding = null, cameraOrientationTimer = null;
 const cameraTrackListeners = new WeakSet();
 const camera = makeAroundCamera({ video, phone: PHONE, audio: MIC, onChange: capture => {
   lens = capture.lens;
@@ -98,12 +98,22 @@ const camera = makeAroundCamera({ video, phone: PHONE, audio: MIC, onChange: cap
   }
 } });
 async function bindCameraMic(mic, owner) {
-  if (!mic) { cameraEars?.stop(); cameraEars = null; cameraBoundMic = null; voice.micOpen = false; return; }
-  if (cameraBoundMic === mic) return;
+  if (!mic) { cameraMicBinding = null; cameraEars?.stop(); cameraEars = null; cameraBoundMic = null; voice.micOpen = false; return; }
+  if (cameraBoundMic === mic && cameraEars) return;
+  if (cameraMicBinding?.mic === mic && cameraMicBinding.owner === owner) return cameraMicBinding.promise;
   cameraEars?.stop();
-  const ears = await startEars(mic);
-  if (owner !== cameraLifecycle) { ears?.stop(); return; }
-  cameraEars = ears || null; cameraBoundMic = mic;
+  cameraEars = null; cameraBoundMic = null;
+  const binding = { mic, owner };
+  cameraMicBinding = binding;
+  binding.promise = (async () => {
+    try {
+      const ears = await startEars(mic);
+      if (owner !== cameraLifecycle || cameraMicBinding !== binding) { ears?.stop(); return; }
+      if (!ears || typeof ears.stop !== 'function') { voice.micOpen = false; return; }
+      cameraEars = ears; cameraBoundMic = mic;
+    } finally { if (cameraMicBinding === binding) cameraMicBinding = null; }
+  })();
+  return binding.promise;
 }
 function recoverAroundCamera() {
   if (!cameraHadStarted || document.hidden || cameraRecovering) return cameraRecovering;
@@ -147,6 +157,7 @@ addEventListener('pagehide', () => {
   cameraStarting = null; cameraRecovering = null; cameraResumeWanted = false;
   clearTimeout(cameraOrientationTimer);
   cameraEars?.stop(); cameraEars = null; cameraBoundMic = null;
+  cameraMicBinding = null;
   camera.stop(); voice.stop({ resumeEars: false }); voice.micOpen = false;
   cameraHadStarted = false;
   if ($('cameraLens')) $('cameraLens').hidden = true;

@@ -150,7 +150,7 @@ test('a torch request with no returned setting does not claim success', async ()
 
 // Exercise only the released start()/camera lifecycle block from the actual app.
 // Ears are the owner's returned-controller contract, never another recognizer.
-function appFixture() {
+function appFixture({ earsFactory } = {}) {
   const f = fixture(), events = {}, docEvents = {}, loops = [], listeners = [], nodes = new Map();
   const get = id => { if (!nodes.has(id)) nodes.set(id, { hidden: false, textContent: '', setAttribute() {}, focus() {} }); return nodes.get(id); };
   const source = fs.readFileSync(new URL('../public/around-app.js', import.meta.url), 'utf8');
@@ -162,9 +162,12 @@ function appFixture() {
     $: get, document: { hidden: false, addEventListener(name, fn) { docEvents[name] = fn; } },
     window: {}, addEventListener(name, fn) { events[name] = fn; }, setTimeout, clearTimeout,
     loop: n => loops.push(n), eyesReady: Promise.resolve(), requestAnimationFrame() {}, watch() {}, speakQueue() {},
-    async startEars(mic) { const listener = { mic, stopped: false, stop() { this.stopped = true; } }; listeners.push(listener); return listener; },
+    async startEars(mic) {
+      if (earsFactory) return earsFactory(mic, listeners);
+      const listener = { mic, stream: mic, stopped: false, stop() { this.stopped = true; this.stream = null; } }; listeners.push(listener); return listener;
+    },
   };
-  vm.createContext(scope); vm.runInContext(start + '\n' + helpers + '\nthis.beginCamera=start;this.cameraUnderTest=camera;', scope);
+  vm.createContext(scope); vm.runInContext(start + '\n' + helpers + '\nthis.beginCamera=start;this.cameraUnderTest=camera;this.readCameraBinding=()=>({bound:cameraBoundMic,ears:cameraEars});', scope);
   return { ...f, scope, events, docEvents, listeners, loops, nodes };
 }
 
@@ -186,4 +189,39 @@ test('pagehide during permission cancels startup and late tracks cannot resume t
   const f = appFixture(), late = deferred(), video = track('video', 'late'), audio = track('audio', 'lateMic');
   f.steps.splice(0, 1, late.promise); const pending = f.scope.beginCamera(); f.events.pagehide(); late.resolve(stream([video, audio])); await pending;
   assert.equal(f.listeners.length, 0); assert.equal(f.loops.length, 0); assert.equal(video.readyState, 'ended'); assert.equal(audio.readyState, 'ended');
+});
+
+test('failed listener startup does not bind the mic and can retry the same retained stream', async () => {
+  let attempts = 0;
+  const f = appFixture({ earsFactory(mic, listeners) {
+    attempts++;
+    if (attempts === 1) return null;
+    const listener = { stream: mic, stop() { this.stream = null; } }; listeners.push(listener); return listener;
+  } });
+  await f.scope.beginCamera();
+  assert.equal(f.scope.readCameraBinding().bound, null); assert.equal(f.scope.readCameraBinding().ears, null);
+  await f.scope.bindCameraMic(f.scope.cameraUnderTest.micStream, 0);
+  assert.equal(attempts, 2); assert.equal(f.listeners.length, 1);
+  assert.equal(f.scope.readCameraBinding().bound, f.scope.cameraUnderTest.micStream);
+});
+
+test('pagehide cancels a pending listener binding and stops a controller returned late', async () => {
+  const later = deferred(); let listener;
+  const f = appFixture({ earsFactory(mic, listeners) {
+    listener = { stream: mic, stopped: false, stop() { this.stopped = true; this.stream = null; } }; listeners.push(listener); return later.promise;
+  } });
+  const pending = f.scope.beginCamera(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.listeners.length, 1);
+  f.events.pagehide(); later.resolve(listener); await pending;
+  assert.equal(listener.stopped, true); assert.equal(f.scope.readCameraBinding().bound, null);
+  assert.equal(f.scope.readCameraBinding().ears, null); assert.equal(f.loops.length, 0); assert.equal(f.mic.readyState, 'ended');
+});
+
+test('overlapping same-mic binds share one pending listener startup', async () => {
+  const later = deferred(); let attempts = 0;
+  const f = appFixture({ earsFactory() { attempts++; return later.promise; } });
+  const mic = stream([f.mic]);
+  const a = f.scope.bindCameraMic(mic, 0), b = f.scope.bindCameraMic(mic, 0);
+  assert.equal(attempts, 1);
+  later.resolve({ stop() {} }); await Promise.all([a, b]); assert.equal(attempts, 1);
 });
