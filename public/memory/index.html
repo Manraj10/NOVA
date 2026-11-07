@@ -22,8 +22,8 @@
   <div class="home-inner">
     <h1>Step back into a room you remember.</h1>
     <p class="lede">Tell me about it in a few words. I’ll ask a question or two, then build it all the way around you, and tell you what’s where.</p>
-    <button class="mic big" id="mic1" aria-label="Talk. Hold, or tap to start and tap again to stop."><span></span></button>
-    <p class="note" id="note1" aria-live="polite">Hold to talk, or tap to start and again to stop.</p>
+    <button class="mic big" id="mic1" aria-label="Talk to Nib" aria-pressed="false"><span aria-hidden="true"></span></button>
+    <p class="note" id="note1">Tap the yellow button and talk, or say “Nib” any time.</p>
     <form class="field glass" id="typeForm">
       <input id="memory" type="text" autocomplete="off" placeholder="Or type it: my grandmother’s kitchen, a winter evening…" aria-label="Or type your memory">
       <button class="go" id="build" aria-label="Continue" disabled>→</button>
@@ -40,37 +40,37 @@
     <span class="count" id="clock" aria-hidden="true"></span>
   </header>
   <div class="bg"><img id="waitimg" alt="" hidden></div>
-  <ol class="chat" id="chat" aria-live="polite"></ol>
-  <section class="sheet glass" id="answerSheet" hidden>
+  <ol class="chat" id="chat" aria-label="Conversation"></ol>
+  <section class="sheet glass" id="answerSheet">
     <p class="caption" id="question"></p>
     <div class="answer-row">
-      <button class="mic" id="mic2" aria-label="Answer. Hold, or tap to start and tap again to stop."><span></span></button>
-      <form class="field" id="answerForm"><input id="answer" type="text" autocomplete="off" placeholder="Or type your answer" aria-label="Type your answer"></form>
+      <button class="mic" id="mic2" aria-label="Talk to Nib" aria-pressed="false"><span aria-hidden="true"></span></button>
+      <form class="field" id="answerForm"><input id="answer" type="text" autocomplete="off" placeholder="Or type here" aria-label="Type to Nib"></form>
     </div>
-    <button class="ghost small" id="skip">Skip</button>
+    <button class="ghost small" id="skip" hidden>Skip this question</button>
   </section>
 </main>
 
 <main id="room" class="screen">
-  <div id="stage"></div>
-  <div id="tags"></div>
+  <div id="stage" role="img" aria-label="The room"></div>
+  <div id="tags" aria-label="Labels"></div>
   <header class="top glass">
     <button class="back" id="leave" aria-label="Leave the room">‹</button>
     <strong id="rtitle">Your room</strong>
-    <button class="back" id="mute" aria-label="Sound" aria-pressed="false">♪</button>
+    <button class="back" id="mute" aria-label="Sound on. Turn sound off" aria-pressed="true">♪</button>
   </header>
   <div class="legend" id="legend" hidden aria-hidden="true">
     <span class="k memory">From your words</span><span class="k invented">Imagined by Nib</span>
   </div>
   <section class="sheet glass room-sheet">
-    <p class="caption small" id="caption" aria-live="polite"></p>
+    <p class="caption small" id="caption"></p>
     <div class="room-row">
       <div class="stick" id="stick" aria-hidden="true"><span></span></div>
-      <button class="mic" id="mic3" aria-label="Change something. Hold, or tap to start and tap again to stop."><span></span></button>
+      <button class="mic" id="mic3" aria-label="Talk to Nib. Tell me anything to change" aria-pressed="false"><span aria-hidden="true"></span></button>
       <button class="pill" id="real" aria-pressed="false">Show what’s real</button>
       <button class="back round" id="tilt" aria-label="Look around by moving your phone" aria-pressed="false">⟳</button>
     </div>
-    <p class="howto" id="howto">Drag to look around · W A S D to walk · hold the yellow button to change something</p>
+    <p class="howto" id="howto">Drag to look around · W A S D to walk · say “Nib” and tell me anything to change</p>
   </section>
   <div class="tagsheet glass" id="tagsheet" hidden>
     <p class="sheet-title" id="tagTitle"></p>
