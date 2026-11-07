@@ -514,8 +514,11 @@ function finishCard(ctx, S, frame, rad, now, still) {
   ctx.fillStyle = C.white;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const title = clean ? 'Completed independently' : 'Finished';
   ctx.font = `700 ${h * 0.11}px ${FONT}`;
-  ctx.fillText(clean ? 'Completed independently' : 'Finished', 0, h * 0.2 + (1 - t) * 8 * u);
+  const fitK = Math.min(1, (w * 0.86) / ctx.measureText(title).width); // never wider than the card
+  ctx.font = `700 ${h * 0.11 * fitK}px ${FONT}`;
+  ctx.fillText(title, 0, h * 0.2 + (1 - t) * 8 * u);
   ctx.font = `500 ${h * 0.075}px ${FONT}`;
   ctx.fillStyle = 'rgba(235,235,245,.64)';
   const sub = clean ? `${filled} of ${S.fields.length} filled · ${S.elapsed || ''}` : S.reviewFailed && !open ? 'Have someone check the page' : `${open} ${open === 1 ? 'place needs' : 'places need'} another look`;

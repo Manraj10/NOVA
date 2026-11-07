@@ -250,7 +250,7 @@ const T = {
   },
 };
 
-const ACTION = { confirm: 'Keep it', checkin: 'Skip', start: 'Start', reading: 'Reading…', reveal: 'Reading…', idle: 'Read the page', guide: 'Repeat', find: 'Repeat', write: 'Done writing', check: 'Reading…', done: 'Read another page' };
+const ACTION = { confirm: 'Keep it', checkin: 'Skip', start: 'Start', reading: 'Reading…', reveal: 'Reading…', idle: 'Read the page', guide: 'Repeat', find: 'Repeat', write: 'Done writing', check: 'Reading…', done: 'New page' };
 const CUE = { up: '↑', down: '↓', left: '←', right: '→' };
 const KIND = { text: 'Write', date: 'Date', number: 'Number', checkbox: 'Check', signature: 'Sign', button: 'Tap' };
 
