@@ -445,11 +445,11 @@ function callout(ctx, S, text, ax, ay, r, still, pop = 0) {
 }
 
 // The finish, Apple Pay style: a glass card where the circle draws, then the check. It says
-// "Completed independently" only when nothing was skipped, unclear or unchecked.
+// Report the kept answers; completing the UI does not establish independent use.
 function finishCard(ctx, S, frame, rad, now, still) {
   const age = still ? 5000 : now - S.finishedAt;
   const filled = S.fields.filter(f => f.done && !f.skipped).length;
-  const open = S.fields.filter(f => f.skipped || f.review || !f.done).length;
+  const open = S.fields.filter(f => f.skipped || f.review || f.stale || !f.done).length;
   const clean = !open && !S.reviewFailed;
   const col = clean ? C.green : C.orange;
   ctx.save();
@@ -514,14 +514,14 @@ function finishCard(ctx, S, frame, rad, now, still) {
   ctx.fillStyle = C.white;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const title = clean ? 'Completed independently' : 'Finished';
+  const title = clean ? 'Answers kept' : 'Review needed';
   ctx.font = `700 ${h * 0.11}px ${FONT}`;
   const fitK = Math.min(1, (w * 0.86) / ctx.measureText(title).width); // never wider than the card
   ctx.font = `700 ${h * 0.11 * fitK}px ${FONT}`;
   ctx.fillText(title, 0, h * 0.2 + (1 - t) * 8 * u);
   ctx.font = `500 ${h * 0.075}px ${FONT}`;
   ctx.fillStyle = 'rgba(235,235,245,.64)';
-  const sub = clean ? `${filled} of ${S.fields.length} filled · ${S.elapsed || ''}` : S.reviewFailed && !open ? 'Have someone check the page' : `${open} ${open === 1 ? 'place needs' : 'places need'} another look`;
+  const sub = clean ? `${filled} of ${S.fields.length} kept · ${S.elapsed || ''}` : S.reviewFailed && !open ? 'Final page check unavailable' : `${open} ${open === 1 ? 'place needs' : 'places need'} another look`;
   ctx.fillText(sub, 0, h * 0.34 + (1 - t) * 8 * u);
   ctx.restore();
 }

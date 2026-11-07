@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Nib</title>
-  <meta name="description" content="A screen reader for paper. Nib reads a form out loud, guides your finger to every blank, and reads your handwriting back.">
+  <meta name="description" content="A screen reader for paper. Nib reads a form aloud, guides your fingertip to a blank, and reads your writing back for you to check.">
   <meta name="theme-color" content="#000000">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,11 @@
   <main id="app" data-screen="start" data-mode="start">
     <header class="bar glass">
       <div class="brand"><span class="app-icon" aria-hidden="true"></span><span class="wordmark">Nib</span></div>
-      <p class="doc" id="docTitle"></p>
+      <div class="doc-context">
+        <div class="session-kicker"><span id="sessionMode">Camera mode</span><span id="sessionState">Ready</span></div>
+        <p class="current-field" id="currentField" hidden></p>
+        <p class="doc" id="docTitle"></p>
+      </div>
       <div class="steps">
         <span class="count" id="count"></span>
         <ol class="progress" id="progress" aria-hidden="true"></ol>
@@ -30,11 +34,12 @@
       <video id="video" playsinline muted></video>
       <div class="view">
         <canvas id="canvas" aria-hidden="true"></canvas>
-        <figure class="readback glass" id="readback" hidden>
+        <figure class="readback glass" id="readback" aria-label="Handwriting readback" hidden>
           <img id="rbImg" alt="">
           <figcaption>
             <span class="rb-label" id="rbLabel"></span>
             <span class="rb-text" id="rbText"></span>
+            <p class="rb-help">Keep it if it is right, or write it again.</p>
             <button class="rb-redo" id="rbRedo" type="button">Write it again</button>
           </figcaption>
         </figure>
@@ -56,9 +61,9 @@
           <div class="start-body">
             <div class="alert" id="alert" role="alert" hidden><strong></strong><p></p></div>
             <span class="hero-icon" aria-hidden="true"></span>
-            <h1 class="hero">Every form, read out&nbsp;loud.</h1>
-            <p class="lede">Nib reads a paper form to you, guides your finger to every blank, and reads your handwriting back. Hold the screen or the Space key to ask it anything.</p>
-            <p class="cta" aria-hidden="true"><span class="tab">Tap anywhere to start</span></p>
+            <h1 class="hero">Your paper.<br>Your handwriting.</h1>
+            <p class="lede">Nib reads a paper form, guides your fingertip to a blank, and reads your writing back for you to check.</p>
+            <p class="cta" aria-hidden="true"><span class="tab">Start reading</span></p>
             <div class="controls">
               <div class="langs" role="group" aria-label="Language">
                 <button data-lang="en">English</button>
