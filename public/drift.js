@@ -121,9 +121,9 @@ function spread(points, w, h) {
 }
 
 function unmasked(points, regions, w, h) {
-  // Current hand bounds plus three analysis pixels of extra margin. Exclude the
-  // WHOLE possible search support, not just an anchor's central point.
-  const support = R + SEARCH + 3;
+  // Verify only current patches that clear the actual hand bounds plus 3px.
+  // Motion-search candidates are separately masked at their candidate positions.
+  const support = R + 3;
   return points.filter(p => !regions.some(r => p.x + support >= r.x0 * w
     && p.x - support <= r.x1 * w && p.y + support >= r.y0 * h && p.y - support <= r.y1 * h));
 }
@@ -138,13 +138,15 @@ function correlation(anchor, gray, table, w, x, y) {
   return Math.max(-1, Math.min(1, dot / norm));
 }
 
-function matches(points, gray, table, w, h) {
+function matches(points, gray, table, w, h, regions) {
   const out = [];
   for (const point of points) {
     const candidates = [];
     for (let dy = -SEARCH; dy <= SEARCH; dy++) for (let dx = -SEARCH; dx <= SEARCH; dx++) {
       const x = point.x + dx, y = point.y + dy;
       if (x < R || y < R || x >= w - R || y >= h - R) continue;
+      if (regions.some(r => x + R + 3 >= r.x0 * w && x - R - 3 <= r.x1 * w
+        && y + R + 3 >= r.y0 * h && y - R - 3 <= r.y1 * h)) continue;
       candidates.push({ dx, dy, score: correlation(point, gray, table, w, x, y) });
     }
     candidates.sort((a, b) => b.score - a.score || a.dx ** 2 + a.dy ** 2 - b.dx ** 2 - b.dy ** 2);
@@ -263,7 +265,7 @@ export function makeDrift({ readFrame = browserReader(), now = () => performance
       const still = points.filter(p => correlation(p, frame.gray, table, w, p.x, p.y) >= STILL).length;
       let why = '';
       if (still / points.length < 0.75) {
-        const model = registered(matches(points, frame.gray, table, w, h), points.length, spreadW, spreadH);
+        const model = registered(matches(points, frame.gray, table, w, h, regions), points.length, spreadW, spreadH);
         if (model) {
           const scale = Math.hypot(model.a, model.b), angle = Math.abs(Math.atan2(model.b, model.a));
           const displacement = Math.hypot(model.a * w / 2 - model.b * h / 2 + model.tx - w / 2,
