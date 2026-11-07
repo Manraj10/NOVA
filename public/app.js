@@ -23,6 +23,7 @@ const T = {
     next: 'Next:',
     stop: 'Stop.',
     coach: 'Write just to the right of your finger. Say done, or tap, when you finish.',
+    coachTap: 'Write just to the right of your finger. Tap the screen when you finish.',
     lift: 'Lift your hand so I can read it.',
     wrote: t => `You wrote ${t}.`,
     blank: 'That spot still looks empty.',
@@ -54,6 +55,7 @@ const T = {
     next: 'Siguiente:',
     stop: 'Alto.',
     coach: 'Escribe justo a la derecha de tu dedo. Di listo, o toca, cuando termines.',
+    coachTap: 'Escribe justo a la derecha de tu dedo. Toca la pantalla cuando termines.',
     lift: 'Levanta la mano para que pueda leerlo.',
     wrote: t => `Escribiste ${t}.`,
     blank: 'Ese espacio todavía parece vacío.',
@@ -85,6 +87,7 @@ const T = {
     next: 'अगला:',
     stop: 'रुकिए।',
     coach: 'अपनी उंगली के ठीक दाईं ओर लिखिए। पूरा होने पर हो गया बोलिए या टैप कीजिए।',
+    coachTap: 'अपनी उंगली के ठीक दाईं ओर लिखिए। पूरा होने पर स्क्रीन पर टैप कीजिए।',
     lift: 'हाथ हटाइए ताकि मैं पढ़ सकूँ।',
     wrote: t => `आपने लिखा: ${t}।`,
     blank: 'वह जगह अभी भी खाली लगती है।',
@@ -116,6 +119,7 @@ const T = {
     next: '下一处：',
     stop: '停。',
     coach: '在手指右边写。写完说好了，或者点一下。',
+    coachTap: '在手指右边写。写完点一下屏幕。',
     lift: '请把手移开，让我看一下。',
     wrote: t => `你写的是：${t}。`,
     blank: '这里看起来还是空的。',
@@ -303,10 +307,22 @@ async function api(path, payload) {
 }
 
 // ---------- the flow ----------
+// iPhone and iPad: an always-on mic switches iOS audio to the quiet earpiece, so there the mic opens
+// only while you hold to ask.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// Hands are on the paper, not the screen, so keep it from sleeping (a locked phone stops the camera).
+let wake = null;
+async function stayAwake() {
+  try { wake = await navigator.wakeLock?.request('screen'); } catch { /* not supported or not allowed: fine */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && wake?.released !== false && S.mode !== 'start') stayAwake(); });
+
 async function begin() {
   if (S.mode !== 'start') return;
   voice.unlock();
-  voice.listen(onVoiceCommand);
+  stayAwake();
+  if (!IOS) voice.listen(onVoiceCommand);
   app.dataset.screen = 'run';
   if (!S.sim) {
     try { await startCamera(); } catch { setMode('start'); app.dataset.screen = 'start'; return say(t().noCamera); }
@@ -467,7 +483,7 @@ function arrive(f) {
   const coached = S.fields.some(x => x.done && !x.skipped);
   const stop = S.stopSaid ? '' : `${t().stop} `;
   S.stopSaid = false;
-  say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${t().coach}`}`);
+  say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${IOS ? t().coachTap : t().coach}`}`);
 }
 
 async function finishWriting() {
