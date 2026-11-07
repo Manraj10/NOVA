@@ -18,7 +18,7 @@ const T = {
   en: {
     hold: 'Hold the form still. Reading it now.',
     count: (title, n) => `${title}. I found ${n} ${n === 1 ? 'place' : 'places'} to fill.`,
-    first: l => `First: ${l}. Rest one finger on the page, and I'll guide it.`,
+    first: l => `First: ${l}. Put one finger on the page.`,
     none: "I can't find any blanks. Slide the whole form under the camera, then tap to try again.",
     next: 'Next:',
     stop: 'Stop.',
@@ -49,7 +49,7 @@ const T = {
   es: {
     hold: 'Mantén el formulario quieto. Lo estoy leyendo.',
     count: (title, n) => `${title}. Encontré ${n} ${n === 1 ? 'espacio' : 'espacios'} por llenar.`,
-    first: l => `Primero: ${l}. Apoya un dedo en la hoja y te guío.`,
+    first: l => `Primero: ${l}. Pon un dedo en la hoja.`,
     none: 'No encuentro espacios en blanco. Pon todo el formulario bajo la cámara y toca para intentar de nuevo.',
     next: 'Siguiente:',
     stop: 'Alto.',
@@ -80,7 +80,7 @@ const T = {
   hi: {
     hold: 'फ़ॉर्म को स्थिर रखिए। मैं इसे पढ़ रहा हूँ।',
     count: (title, n) => `${title}। भरने के लिए ${n} जगहें मिलीं।`,
-    first: l => `पहले: ${l}। एक उंगली पन्ने पर रखिए, मैं रास्ता बताऊँगा।`,
+    first: l => `पहले: ${l}। एक उंगली पन्ने पर रखिए।`,
     none: 'मुझे कोई खाली जगह नहीं दिखी। पूरा फ़ॉर्म कैमरे के नीचे रखिए और फिर टैप कीजिए।',
     next: 'अगला:',
     stop: 'रुकिए।',
@@ -111,7 +111,7 @@ const T = {
   zh: {
     hold: '请把表格放稳，我正在读。',
     count: (title, n) => `${title}。我找到 ${n} 处要填写。`,
-    first: l => `第一处：${l}。把一根手指放在纸上，我来引导你。`,
+    first: l => `第一处：${l}。把一根手指放在纸上。`,
     none: '我没找到空白处。请把整张表放到摄像头下，然后点一下重试。',
     next: '下一处：',
     stop: '停。',
@@ -172,7 +172,12 @@ voice.onWord = i => {
   S.words.forEach((w, j) => w.classList.toggle('said', j <= S.wordK));
 };
 voice.onEnd = () => { for (const w of S.words) w.classList.add('said'); S.words = []; };
-const say = (text, opts) => { if (!opts?.cue) S.lastSay = text; return voice.say(text, opts); };
+// Every spoken line is also an event, so a test robot (bot.js) can "hear" Nib the way a blind user would.
+const say = (text, opts) => {
+  if (!opts?.cue) S.lastSay = text;
+  dispatchEvent(new CustomEvent('nib:say', { detail: { text, cue: !!opts?.cue } }));
+  return voice.say(text, opts);
+};
 
 function showCaption(text) {
   const p = $('captionText');
@@ -344,7 +349,7 @@ async function reveal() {
   setMode('reveal');
   renderLists();
   $('docTitle').textContent = S.title;
-  await Promise.all([say(t().count(S.title, S.fields.length)), wait(1700)]);
+  await Promise.all([say(`${t().count(S.title, S.fields.length)} ${t().askHint}`), wait(1700)]);
 }
 
 function activate(i, first = false, intro = '') {
@@ -355,7 +360,8 @@ function activate(i, first = false, intro = '') {
   setMode('guide');
   renderLists();
   const f = S.fields[i];
-  say(intro || (first ? `${t().first(f.label)} ${t().askHint}` : `${t().next} ${f.label}.`));
+  S.lastDir = null;
+  say(intro || (first ? t().first(f.label) : `${t().next} ${f.label}.`), { soft: true });
 }
 
 // What the finger is being guided to: the field to fill, or any spot the person asked about ("where is the total?").
@@ -377,13 +383,19 @@ function guide(now) {
   setCue(g.inside ? 'on' : g.dir);
   pace(now, g);
   if (g.inside) {
+    // Say "stop" the instant the finger lands, so it doesn't drift past while the dwell timer runs.
+    if (!S.arrivedSince) { S.stopSaid = true; say(t().stop, { cue: true }); }
     S.arrivedSince ||= now;
     if (now - S.arrivedSince > 450) (S.mode === 'find' ? found : arrive)(f);
     return;
   }
   S.arrivedSince = 0;
-  if (now - S.lastCue > 1100 && !voice.busy()) {
+  // A change of direction is said at once; the same direction repeats only every 1.3 s.
+  const turn = g.dir !== S.lastDir || g.near !== S.lastNear;
+  if (!voice.busy() && now - S.lastCue > (turn ? 300 : 1300)) {
     S.lastCue = now;
+    S.lastDir = g.dir;
+    S.lastNear = g.near;
     say(voice.cueWord(g.dir, g.near), { cue: true });
   }
 }
@@ -404,7 +416,7 @@ function offset(f, tip) {
     inside: ex <= 1 && ey <= 1,
     // Get onto the right row first, then slide along it.
     dir: ey >= ex ? (dy < 0 ? 'up' : 'down') : (dx < 0 ? 'left' : 'right'),
-    near: Math.max(ex, ey) < 3,
+    near: Math.max(ex, ey) < 3 || Math.hypot(dx, dy) < 0.1, // within ~3 cm: slow down
     d: Math.hypot(dx, dy),
     dx,
   };
@@ -412,12 +424,12 @@ function offset(f, tip) {
 
 // Parking-sensor beeps: faster and higher as the finger closes in, panned toward the target.
 function pace(now, g) {
-  if (voice.busy()) return;
+  // Never silent: under speech the beeps just get quieter.
   const d = Math.min(g.d, 0.6) / 0.6;
   const every = g.inside ? 90 : 140 + d * 560;
   if (now - S.lastBeep < every) return;
   S.lastBeep = now;
-  voice.beep(g.inside ? 1100 : 440 + (1 - d) * 520, 0.045, 0.08, g.dx / 0.25);
+  voice.beep(g.inside ? 1100 : 440 + (1 - d) * 520, 0.045, voice.busy() ? 0.035 : 0.08, g.dx / 0.25);
   S.pulses.push({ t: now, on: g.inside });
   if (S.pulses.length > 8) S.pulses.shift();
   buzz(g.inside ? 25 : 12);
@@ -429,9 +441,10 @@ function goFind(out) {
   S.find = { label: out.label || '', kind: 'find', ...out.box, say: out.say, back, q: S.lastQ };
   S.arrivedSince = 0;
   S.sweepAt = performance.now();
+  S.lastDir = null;
   setMode('find');
   renderLists();
-  say(t().takeYou);
+  say(t().takeYou, { soft: true });
 }
 
 function found(f) {
@@ -452,7 +465,9 @@ function arrive(f) {
   voice.chime();
   buzz([40, 40, 80]);
   const coached = S.fields.some(x => x.done && !x.skipped);
-  say(`${t().stop} ${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${t().coach}`}`);
+  const stop = S.stopSaid ? '' : `${t().stop} `;
+  S.stopSaid = false;
+  say(`${stop}${f.say}${f.hint ? ` ${f.hint}` : ''}${coached ? '' : ` ${t().coach}`}`);
 }
 
 async function finishWriting() {
@@ -932,6 +947,7 @@ fetch('/api/status').then(r => r.json()).then(s => {
 window.nib = S; // lets you poke at state from the console, at the venue too
 window.nibAsk = answer; // and type a question as if it were spoken (a fallback when the room is too loud)
 if (S.sim) {
+  if (new URLSearchParams(location.search).has('bot')) import('./bot.js').then(m => m.startBot(S)); // robot finger test
   app.dataset.sim = '';
   status('Practice mode: your pointer is the fingertip. Tap Space when you finish writing; hold Space to ask.');
   $('modeLink').href = './';

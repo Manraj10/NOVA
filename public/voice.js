@@ -47,10 +47,12 @@ export const voice = {
       || same.find(v => NICE.test(v.name)) || same.find(v => v.lang.replace('_', '-').toLowerCase() === tag) || same[0] || null;
   },
 
-  busy() { return this.speaking && this.kind === 'say'; },
+  // A soft line ("Next: Phone number.") gets ~1 s to land, then directions may cut in. Hard lines
+  // ("Stop. Write your name here.") always finish.
+  busy() { return this.speaking && this.kind === 'say' && !(this.soft && performance.now() - this.startedAt > 900); },
 
   // cue: short direction words. They never cut off a full instruction.
-  say(text, { cue = false } = {}) {
+  say(text, { cue = false, soft = false } = {}) {
     if (!text) return Promise.resolve();
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
@@ -60,7 +62,7 @@ export const voice = {
       u.lang = TAGS[this.lang];
       const v = this.pick();
       if (v) u.voice = v;
-      u.rate = cue ? 1.2 : 1.02;
+      u.rate = cue ? 1.3 : 1.05;
       let done = false;
       const end = () => {
         if (done) return;
@@ -77,6 +79,8 @@ export const voice = {
       this.current = u;
       this.speaking = true;
       this.kind = cue ? 'cue' : 'say';
+      this.soft = !cue && soft;
+      this.startedAt = performance.now();
       speechSynthesis.speak(u);
     });
   },

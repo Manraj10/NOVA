@@ -17,6 +17,7 @@ npm start
 Put the OpenRouter key NOVA emails us into `.env` as `OPENROUTER_KEY=...` (a Gemini, Claude or OpenAI key works too), then open http://localhost:8787.
 
 - **Practice mode, no camera or key needed:** http://localhost:8787/?sim. The mouse is your fingertip. Tap Space when you finish a field, hold Space to ask a question.
+- **Robot finger test:** http://localhost:8787/?sim&bot=1 runs a simulated blindfolded user that only hears Nib's words, reacts like a person, and overshoots. Press Space, and `window.nibBot` reports seconds and spoken directions per field. Use the same seed number to compare guidance changes.
 - **Real mode:** a webcam looking straight down at a form taped to the table, about 40 cm up. Rest your index fingertip on the page and Nib guides it.
 
 Never commit `.env`. OpenRouter scans GitHub and kills any key it finds, and the event key may only power Nib itself, not a coding agent.
