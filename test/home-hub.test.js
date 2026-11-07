@@ -8,17 +8,17 @@ const { loadVoice } = createRequire(import.meta.url)('./helpers/voice-mocks.cjs'
 const voiceFile = fileURLToPath(new URL('../public/voice.js', import.meta.url));
 const source=fs.readFileSync(new URL('../public/home.js',import.meta.url),'utf8').replace(/\r\n/g, '\n').replace(/^import .*;\n/gm,'');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture({defer=false,available=true,memoryReady=true,deny=false,resumeBlocked=false,resumeReject=false,deferResume=false,deferEars=false,locationSearch='',deferNavigationSpeech=false}={}) {
+function fixture({defer=false,available=true,memoryReady=true,deny=false,resumeBlocked=false,resumeReject=false,deferResume=false,deferEars=false,locationSearch='',deferNavigationSpeech=false,deferMenu=false}={}) {
   const nodes={live:{textContent:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}},listen:{textContent:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}}};
-  const events={},domEvents={},said=[],saidOptions=[],destinations=[],echoCalls=[],listeners=[],order=[],streams=[],permissionsQueue=[],speechQueue=[];
+  const events={},domEvents={},said=[],saidOptions=[],destinations=[],echoCalls=[],listeners=[],order=[],streams=[],permissionsQueue=[],speechQueue=[],menuQueue=[],earcons=[];
   let permissions=0,stops=0,now=1000,timerId=0,finishResume,finishEars;
   const timers=new Map(),shared=loadVoice(voiceFile).voice;
   const resumeGate=new Promise(resolve=>{finishResume=resolve;}),earsGate=new Promise(resolve=>{finishEars=resolve;});
   const audio={state:'suspended',resume(){order.push('resume');if(resumeReject)return Promise.reject(Error('NotAllowedError'));if(deferResume)return resumeGate;if(!resumeBlocked)this.state='running';return Promise.resolve();}};
-  const voice={ctx:null,micOpen:false,init(){},unlock(){order.push('unlock');this.unlocked=true;this.ctx ||= audio;Promise.resolve(this.ctx.resume()).catch(()=>{});},
-    say(t,opts){said.push(t);saidOptions.push(opts);order.push('speech');return deferNavigationSpeech&&/^Opening/.test(t)?new Promise(r=>speechQueue.push(r)):Promise.resolve();},
-    earcon(){},wake:shared.wake.bind(shared),prefetch(){},navigation:shared.navigation.bind(shared),echoSnapshot:()=>({active:true,recent:['menu']}),
-    echo(text,captured){echoCalls.push([text,captured]);return captured?.echo===true;},stop(){}};
+  const voice={seq:0,ctx:null,micOpen:false,init(){},unlock(){order.push('unlock');this.unlocked=true;this.ctx ||= audio;Promise.resolve(this.ctx.resume()).catch(()=>{});},
+    say(t,opts){this.seq++;said.push(t);saidOptions.push(opts);order.push('speech');if(deferMenu&&/^You are on Nib Home/.test(t))return new Promise(r=>menuQueue.push(r));return deferNavigationSpeech&&/^Opening/.test(t)?new Promise(r=>speechQueue.push(r)):Promise.resolve();},
+    earcon(up){earcons.push(up);},wake:shared.wake.bind(shared),prefetch(){},navigation:shared.navigation.bind(shared),echoSnapshot:()=>({active:true,recent:['menu']}),
+    echo(text,captured){echoCalls.push([text,captured]);return captured?.echo===true;},stop(){this.seq++;}};
   const context={voice,MIC:{},window:{},URLSearchParams,location:{search:locationSearch,set href(v){destinations.push(v);}},
     navigator:{mediaDevices:available?{getUserMedia(){permissions++;order.push('permission');const track={stop(){stops++;}};const mic={getTracks:()=>[track]};streams.push(mic);
       if(defer)return new Promise((resolve,reject)=>permissionsQueue.push({resolve,reject,mic}));
@@ -27,7 +27,7 @@ function fixture({defer=false,available=true,memoryReady=true,deny=false,resumeB
     addEventListener(k,fn){events[k]=fn;},setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,at:now+ms});return id;},clearTimeout(id){timers.delete(id);},
     makeEars(options){order.push('ears');const ears={options,stream:null,stopped:false,async start(s){this.stream=s;if(deferEars)await earsGate;return this;},stop(){this.stopped=true;this.stream=null;}};listeners.push(ears);return ears;}};
   vm.createContext(context);vm.runInContext(source+'\nthis.startHome=start;this.goHome=go;this.initialHomeStartup=starting;',context);
-  return{context,voice,nodes,said,saidOptions,destinations,echoCalls,events,domEvents,listeners,order,streams,audio,ready:context.initialHomeStartup||Promise.resolve(),
+  return{context,voice,nodes,said,saidOptions,destinations,echoCalls,events,domEvents,listeners,order,streams,audio,earcons,finishMenu:()=>menuQueue.shift()?.(),ready:context.initialHomeStartup||Promise.resolve(),
     get mic(){return streams.at(-1);},release(index=0){const [pending]=permissionsQueue.splice(index,1);pending.resolve(pending.mic);},rejectPermission(index=0){permissionsQueue.splice(index,1)[0].reject(Error('denied late'));},
     resumeAudio(){audio.state='running';finishResume();},finishEars,finishSpeech:()=>speechQueue.shift()?.(),permissions:()=>permissions,stops:()=>stops,at:time=>{now=time;},
     async advance(ms){now+=ms;for(const[id,t]of[...timers])if(t.at<=now){timers.delete(id);t.fn();}await flush();}};
@@ -209,4 +209,32 @@ test('a manual microphone failure is spoken with system voice when audio is avai
   assert.equal(f.saidOptions.at(-1).system,true);
   assert.equal(f.nodes.live.attrs['aria-live'],'off');
   assert.equal(f.nodes.listen.attrs['aria-pressed'],'false');
+});
+
+test('a timely general Home question still gets the overview when transcription is slow',async()=>{
+  const f=fixture();await f.ready;const options=f.listeners[0].options;
+  options.onText('Hey Nib',options.onCapture());f.at(8500);const question=options.onCapture();
+  f.at(10500);options.onText('what can this app help me with?',question);
+  assert.match(f.said.at(-1),/Trace/);assert.deepEqual(f.destinations,[]);
+});
+
+test('finished first greeting opens a choice/question window without needing Nib',async()=>{
+  const f=fixture({deferMenu:true});await f.ready;assert.deepEqual(f.earcons,[]);
+  f.finishMenu();await flush();assert.deepEqual(f.earcons,[true]);
+  const options=f.listeners[0].options;options.onText('what can this app help me with?',options.onCapture());
+  assert.match(f.said.at(-1),/Trace/);assert.match(f.said.at(-1),/Memory/);assert.deepEqual(f.destinations,[]);
+});
+test('cancelled greeting completion cannot reopen the initial listening window',async()=>{
+  const f=fixture({deferMenu:true});await f.ready;f.voice.stop();f.finishMenu();await flush();
+  assert.deepEqual(f.earcons,[]);const before=f.said.length;const options=f.listeners[0].options;
+  options.onText('what can this app help me with?',options.onCapture());assert.equal(f.said.length,before);
+});
+test('an old greeting cannot overwrite a newer bare Nib listening intent',async()=>{
+  const f=fixture({deferMenu:true});await f.ready;f.at(2000);const options=f.listeners[0].options;
+  options.onText('Nib',options.onCapture());const message=f.nodes.live.textContent;
+  f.at(3000);f.finishMenu();await flush();assert.equal(f.nodes.live.textContent,message);assert.deepEqual(f.earcons,[true]);
+});
+test('navigation while greeting is pending cannot reopen or replace destination feedback',async()=>{
+  const f=fixture({deferMenu:true});await f.ready;f.context.goHome('paper');const message=f.nodes.live.textContent;
+  f.finishMenu();await flush();assert.equal(f.nodes.live.textContent,message);assert.deepEqual(f.earcons,[]);assert.deepEqual(f.destinations,['paper.html']);
 });

@@ -2,7 +2,7 @@
 import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
 
-const ABOUT = "I'm Nib. I can read a paper form with you and guide your finger to every blank, tell you who and what is around you, or rebuild a room you remember so your family can step inside. Say Trace, Around me, or Memory.";
+const ABOUT = "I'm Nib. I can read a paper form with you and guide your finger to the blanks, tell you who and what is around you, or rebuild a room you remember so your family can step inside. Say Trace, Around me, or Memory.";
 const MENU = 'You are on Nib Home. Say Trace for paper, Around me, or Memory. Say help to hear these choices again, or tap a card.';
 const MEMORY_PENDING = 'Memory is being connected. You are still on Nib Home. Choose Trace or Around me for now.';
 const memoryReady = document.documentElement?.dataset.memoryReady === 'true';
@@ -57,8 +57,9 @@ function handle(text, echoContext, token) {
   const quiet = /^(stop|quiet|pause|stop speaking|be quiet)$/.test(phrase);
   // Once a wake has been acknowledged, a fresh precise command must work
   // through the short acoustic tail of the interrupted menu.
-  const followup = token?.owner === generation && token.sequence > wakeAfter
-    && token.capturedAt >= wakeAt && token.capturedAt < wakeUntil && (destination || help || quiet);
+  const capturedInWindow = token?.owner === generation && token.sequence > wakeAfter
+    && token.capturedAt >= wakeAt && token.capturedAt < wakeUntil;
+  const followup = capturedInWindow && (destination || help || quiet);
   if (!followup && voice.echo(text, echoContext)) return 'echo';
   if (quiet) {
     wakeUntil = 0; voice.stop({ resumeEars: false });
@@ -78,7 +79,7 @@ function handle(text, echoContext, token) {
   if (destination) { wakeUntil = 0; go(destination); return destination; }
   if (help || wake) { wakeUntil = 0; voice.say(MENU); return 'menu'; }
   // Siri-like: anything said right after "Nib" gets a friendly answer, never silence.
-  if (performance.now() < wakeUntil) { wakeUntil = 0; voice.say(ABOUT); return 'about'; }
+  if (capturedInWindow || performance.now() < wakeUntil) { wakeUntil = 0; voice.say(ABOUT); return 'about'; }
   return null;
 }
 
@@ -131,7 +132,8 @@ function start({ automatic = false } = {}) {
       if (!current()) { candidate.stop(); releaseStream(acquired); return; }
       ears = candidate;
       state('Listening. Say Trace, Around me, Memory, or help.', true);
-      voice.say(MENU); // only after permission, running audio and the same listener
+      const greeting = voice.say(MENU); // only after permission, running audio and the same listener
+      listenAfterMenu(greeting, owner, candidate);
     } catch (error) {
       candidate?.stop(); releaseStream(acquired);
       if (mic === acquired) mic = null;
@@ -153,6 +155,15 @@ function start({ automatic = false } = {}) {
   })();
   starting = pending;
   return pending;
+}
+function listenAfterMenu(completion, owner, listener) {
+  const speech = voice.seq; // say() increments this; cancellation also increments it
+  Promise.resolve(completion).then(() => {
+    if (leaving || generation !== owner || ears !== listener || !listener.stream || voice.seq !== speech) return;
+    wakeAt = performance.now(); wakeUntil = wakeAt + 8000; wakeAfter = captureSequence;
+    state('Listening. Say a mode, or ask what Nib can do.', true);
+    voice.earcon(true);
+  }, () => {});
 }
 function autoStart() {
   if (autoAttempted || leaving || document.hidden || new URLSearchParams(location.search).has('bot')) return;
