@@ -44,6 +44,9 @@ const T = {
     offline: 'I can answer that once a model key is added.',
     nothingToFill: title => `${title}. There's nothing to fill in here. Ask me where anything is, or ask me to read it.`,
     takeYou: "I'll take you there.",
+    startTab: 'Tap anywhere to start',
+    startClick: 'Click anywhere to start',
+    noServer: "I can't reach the server. Check the Wi-Fi, then tap to try again.",
     firstShort: l => `First: ${l}.`,
     cancelled: 'Okay, stopped looking.',
     notFound: "I couldn't get you there. Let's carry on.",
@@ -93,6 +96,9 @@ const T = {
     offline: 'Puedo responder eso cuando se agregue una clave del modelo.',
     nothingToFill: title => `${title}. Aquí no hay nada que llenar. Pregúntame dónde está cualquier cosa, o pídeme que lo lea.`,
     takeYou: 'Te llevo ahí.',
+    startTab: 'Toca para empezar',
+    startClick: 'Haz clic para empezar',
+    noServer: 'No puedo conectar con el servidor. Revisa el wifi y toca para reintentar.',
     firstShort: l => `Primero: ${l}.`,
     cancelled: 'Bien, dejo de buscar.',
     notFound: 'No pude llevarte ahí. Sigamos.',
@@ -142,6 +148,9 @@ const T = {
     offline: 'मॉडल की कुंजी जुड़ने पर मैं इसका जवाब दे पाऊँगा।',
     nothingToFill: title => `${title}। यहाँ भरने के लिए कुछ नहीं है। मुझसे पूछिए कि कुछ भी कहाँ है, या पढ़ने को कहिए।`,
     takeYou: 'मैं आपको वहाँ ले चलता हूँ।',
+    startTab: 'शुरू करने के लिए छुएँ',
+    startClick: 'शुरू करने के लिए क्लिक करें',
+    noServer: 'सर्वर तक नहीं पहुँच पा रहा। वाई-फ़ाई देखिए, फिर दोबारा टैप कीजिए।',
     firstShort: l => `पहले: ${l}।`,
     cancelled: 'ठीक है, ढूँढना बंद किया।',
     notFound: 'मैं आपको वहाँ नहीं ले जा पाया। आगे चलते हैं।',
@@ -191,6 +200,9 @@ const T = {
     offline: '加上模型密钥后我就能回答这个问题。',
     nothingToFill: title => `${title}。这里没有要填的地方。可以问我任何东西在哪里，或者让我读给你听。`,
     takeYou: '我带你过去。',
+    startTab: '点击任意处开始',
+    startClick: '点击任意处开始',
+    noServer: '连不上服务器。请检查无线网络，然后点一下重试。',
     firstShort: l => `第一处：${l}。`,
     cancelled: '好，不找了。',
     notFound: '我没能带你过去，我们继续吧。',
@@ -226,7 +238,7 @@ const S = {
   onTarget: false, arrivedSince: 0, prox: 1,
   lastCue: 0, lastBeep: 0, lastNoHand: 0, cue: '', pulses: [],
   sweepAt: 0, burstAt: 0, revealStart: 0, flag: null, hole: null, fit: null,
-  startedAt: 0, finishedAt: 0, elapsed: '',
+  startedAt: 0, finishedAt: 0, elapsed: '', epoch: 0,
   lastSay: '', words: [], wordAt: 0, wordK: -1, boundary: false,
 };
 const t = () => T[S.lang];
@@ -241,9 +253,14 @@ voice.onWord = i => {
   S.words.forEach((w, j) => { if (Number(w.dataset.at) <= i) S.wordK = j; });
   S.wordAt = S.boundary;
   S.shownK = S.wordK;
-  S.words.forEach((w, j) => w.classList.toggle('said', j <= S.wordK));
+  S.words.forEach((w, j) => { w.classList.toggle('said', j <= S.wordK); w.classList.toggle('now', j === S.wordK); });
+  follow(S.wordK);
 };
-voice.onEnd = () => { for (const w of S.words) w.classList.add('said'); S.words = []; };
+voice.onEnd = () => { for (const w of S.words) { w.classList.add('said'); w.classList.remove('now'); } S.words = []; };
+function follow(k) {
+  const p = $('captionText'), w = S.words[k];
+  if (w && p.scrollHeight > p.clientHeight) p.scrollTop = Math.max(0, w.offsetTop - p.clientHeight / 3);
+}
 // Every spoken line is also an event, so a test robot (bot.js) can "hear" Nib the way a blind user would.
 const say = (text, opts) => {
   if (!opts?.cue) S.lastSay = text;
@@ -254,6 +271,7 @@ const say = (text, opts) => {
 function showCaption(text) {
   const p = $('captionText');
   p.replaceChildren();
+  p.scrollTop = 0;
   let at = 0;
   for (const part of text.split(/(\s+)/)) {
     if (part) {
@@ -281,7 +299,8 @@ function tickWords(now) {
   const k = Math.max(S.wordK, Math.floor((now - S.wordAt) / 290) + (S.boundary ? S.wordK : 0));
   if (k === S.shownK) return;
   S.shownK = k;
-  S.words.forEach((w, j) => w.classList.toggle('said', j <= k));
+  S.words.forEach((w, j) => { w.classList.toggle('said', j <= k); w.classList.toggle('now', j === k); });
+  follow(k);
 }
 
 // ---------- hand tracking ----------
@@ -313,7 +332,7 @@ function trackHands(now) {
   if (!S.handPts.length) { S.pointerIdx = -1; return; }
   S.handAt = now;
   S.pointerIdx = pickPointer(now);
-  if (S.pointerIdx < 0) return;
+  if (S.pointerIdx < 0) { S.tipSeen = 0; S.arrivedSince = 0; S.onTarget = false; return; }
   const tip = S.handPts[S.pointerIdx][8];
   setTip(tip.x, tip.y, now);
 }
@@ -388,6 +407,7 @@ async function listCameras() {
     const keep = sel.value;
     sel.replaceChildren(new Option('Default camera', ''), ...cams.map((c, k) => new Option(c.label || `Camera ${k + 1}`, c.deviceId)));
     sel.value = keep;
+    sel.closest('.cam').hidden = cams.filter(c => c.label).length < 2;
   } catch { /* no camera list on this browser */ }
 }
 
@@ -407,7 +427,7 @@ function snapshot(region) {
 
 async function api(path, payload) {
   const t0 = performance.now();
-  const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout?.(60000) });
   const j = await r.json().catch(() => ({}));
   S.lastApi = { job: path.replace('/api/', ''), secs: (performance.now() - t0) / 1000 };
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status}).`);
@@ -438,31 +458,48 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+function cameraFail(e) {
+  const m = !window.isSecureContext || !navigator.mediaDevices ? ['The camera needs https', 'Open this page over https, or on localhost.']
+    : e?.name === 'NotAllowedError' ? ['Camera is blocked', IOS ? 'Tap aA in the address bar, then Website Settings, Camera, Allow. Then tap to try again.' : 'Click the camera icon in the address bar, choose Allow, then click to try again.']
+      : e?.name === 'NotFoundError' || e?.name === 'OverconstrainedError' ? ['No camera found', 'Connect a camera, then try again.']
+        : e?.name === 'NotReadableError' ? ['Another app is using the camera', 'Close it, then try again.']
+          : ['The camera did not start', 'Reload the page and try again.'];
+  const a = $('alert');
+  a.querySelector('strong').textContent = m[0];
+  a.querySelector('p').textContent = m[1];
+  a.hidden = false;
+}
+
 async function begin() {
   if (S.mode !== 'start') return;
+  $('alert').hidden = true;
   voice.unlock();
   stayAwake();
   if (!IOS) voice.listen(onVoiceCommand);
   app.dataset.screen = 'run';
   if (!S.sim) {
-    try { await startCamera(); } catch { setMode('start'); app.dataset.screen = 'start'; return say(t().noCamera); }
+    try { await startCamera(); } catch (e) { setMode('start'); app.dataset.screen = 'start'; cameraFail(e); return say(t().noCamera); }
   }
   await readForm();
 }
 
 async function readForm() {
+  const ep = ++S.epoch;
   setMode('reading');
   S.fields = [];
   S.title = '';
   S.reviewed = false;
   S.reviewFailed = false;
   S.find = null;
+  S.readT0 = 0;
   S.pointerLabel = null; // every page starts with a fresh finger check-in (camera only)
   renderLists();
   say(t().hold);
   await wait(900); // let the camera settle focus and exposure
+  if (ep !== S.epoch) return;
   // A slow read should never be silent: count the seconds on screen and say what's happening.
   const t0 = performance.now(), told = new Set();
+  S.readT0 = t0;
   const ticker = setInterval(() => {
     if (S.mode !== 'reading') return;
     const secs = Math.round((performance.now() - t0) / 1000);
@@ -473,6 +510,7 @@ async function readForm() {
   try {
     const out = S.sim ? await S.sim.parse(S.lang) : await api('/api/parse', { image: snapshot(), lang: S.lang }).finally(() => clearInterval(ticker));
     clearInterval(ticker);
+    if (ep !== S.epoch) return; // a newer read started meanwhile
     S.readSecs = (performance.now() - t0) / 1000; // shown to the room: measured, not claimed
     S.title = out.title || '';
     S.fields = (out.fields || []).map(f => ({ ...f, done: false }));
@@ -482,7 +520,10 @@ async function readForm() {
     if (S.sim || S.pointerLabel) activate(0, true);
     else checkin();
   } catch (e) {
+    clearInterval(ticker);
+    if (ep !== S.epoch) return;
     setMode('idle');
+    setCue('error');
     renderLists();
     speakErr(e);
   }
@@ -567,7 +608,7 @@ function guide(now) {
     // Say "stop" the instant the finger lands, so it doesn't drift past while the dwell timer runs.
     if (!S.arrivedSince) { S.stopSaid = true; say(t().stop, { cue: true }); }
     S.arrivedSince ||= now;
-    if (now - S.arrivedSince > 450) (S.mode === 'find' ? found : arrive)(f);
+    if (now - S.arrivedSince > 450 && now - S.tipSeen < 150) (S.mode === 'find' ? found : arrive)(f);
     return;
   }
   S.arrivedSince = 0;
@@ -649,6 +690,7 @@ function abortFind(msg) {
 }
 
 function found(f) {
+  S.burstPt = anchorOf(f);
   S.find = null;
   S.onTarget = false;
   S.burstAt = performance.now();
@@ -664,6 +706,7 @@ function found(f) {
 function arrive(f) {
   setMode('write');
   S.onTarget = false;
+  S.burstPt = anchorOf(f);
   S.burstAt = performance.now();
   voice.chime();
   buzz([40, 40, 80]);
@@ -675,14 +718,17 @@ function arrive(f) {
 
 async function finishWriting() {
   if (S.mode !== 'write') return;
-  const f = S.fields[S.i];
+  const f = S.fields[S.i], ep = S.epoch;
+  const stale = () => ep !== S.epoch || S.mode !== 'check' || S.fields[S.i] !== f;
   setMode('check');
   if (S.sim) S.sim.write(f);
   else { say(t().lift); await handAway(f); }
+  if (stale()) return;
   const image = snapshot(expand(f));
   readback.show(image, f.label);
   try {
     const out = S.sim ? (await wait(700), S.sim.read(f, S.lang)) : await api('/api/read', { image, label: f.label, kind: f.kind, lang: S.lang });
+    if (stale()) return;
     const empty = !out.text || out.text === 'empty';
     if (empty) {
       readback.result('', false);
@@ -698,8 +744,10 @@ async function finishWriting() {
     renderLists();
     say(`${out.spoken || t().wrote(f.answer)}${f.review ? ` ${t().unsure}` : ''} ${t().confirm}`);
   } catch (e) {
+    if (stale()) return;
     readback.hide();
     setMode('write');
+    setCue('error');
     return speakErr(e);
   }
 }
@@ -709,7 +757,8 @@ function speakErr(e) {
   const m = e?.message || '';
   console.warn('[nib]', m);
   if (/Form reading is off/.test(m)) return say(t().noKey);
-  if (/too long|timed out|TimeoutError/i.test(m)) return say(t().slow);
+  if (e?.name === 'TimeoutError' || /too long|timed out|TimeoutError/i.test(m)) return say(t().slow);
+  if (e instanceof TypeError) return say(t().noServer); // fetch itself failed: no network or no server
   if (/rate-limit|wait a few/i.test(m)) return say(t().busy);
   if (/out of credits/i.test(m)) return say(t().noCredit);
   return say(t().readFail);
@@ -718,6 +767,7 @@ function speakErr(e) {
 // The person heard the readback and keeps it.
 function keep() {
   if (S.mode !== 'confirm') return;
+  $('readback').dataset.state = 'kept';
   const f = S.fields[S.i];
   f.done = true;
   f.doneAt = performance.now();
@@ -741,12 +791,18 @@ function handAway(f) {
   return new Promise(resolve => {
     const start = performance.now();
     let clearSince = 0;
+    let asked = false;
     const tick = () => {
       const now = performance.now();
-      const covering = now - S.tipSeen < 300 && S.handPts.some(h => h.some(p => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1));
+      const covering = now - (S.handAt || 0) < 300 && S.handPts.some(h => {
+        const xs = h.map(p => p.x), ys = h.map(p => p.y);
+        return Math.min(...xs) - 0.02 < r.x1 && Math.max(...xs) + 0.02 > r.x0 && Math.min(...ys) - 0.02 < r.y1 && Math.max(...ys) + 0.02 > r.y0;
+      });
       if (covering) clearSince = 0;
       else if (!clearSince) clearSince = now;
-      if ((clearSince && now - clearSince > 600) || now - start > 5000) return resolve();
+      if (clearSince && now - clearSince > 600) return resolve(true);
+      if (now - start > 5000 && !asked) { asked = true; say(t().lift); }
+      if (now - start > 12000) return resolve(false);
       requestAnimationFrame(tick);
     };
     tick();
@@ -757,7 +813,8 @@ function handAway(f) {
 // only leave room for descenders: any more catches the next row's writing.
 function expand(f) {
   const h = f.y1 - f.y0;
-  return { x0: f.x0 - 0.03, x1: f.x1 + 0.03, y0: f.y0 - Math.max(h, 0.05), y1: f.y1 + Math.max(h * 0.25, 0.008) };
+  const c = v => Math.min(1, Math.max(0, v));
+  return { x0: c(f.x0 - 0.03), x1: c(f.x1 + 0.03), y0: c(f.y0 - Math.max(h, 0.05)), y1: c(f.y1 + Math.max(h * 0.25, 0.008)) };
 }
 
 // The next field still to fill: after this one first, then wrap around to any left earlier (after a jump).
@@ -780,12 +837,15 @@ const iou = (a, b) => {
 async function review() {
   if (S.reviewed || !S.fields.length) return finish();
   S.reviewed = true;
+  const ep = S.epoch;
   setMode('reading');
+  S.readT0 = performance.now();
   say(S.sim ? t().checking : `${t().checking} ${t().lift}`);
   try {
     if (!S.sim) await handAway({ x0: 0, y0: 0, x1: 1, y1: 1 });
     const ledger = S.fields.map(({ label, done, skipped, answer: a }) => ({ label, done, skipped, answer: a }));
     const out = S.sim ? (await wait(1200), S.sim.review(S.lang)) : await api('/api/review', { image: snapshot(), fields: ledger, lang: S.lang });
+    if (ep !== S.epoch) return;
     S.reviewFailed = out.unplaced > 0; // a missing place it could not locate: the page is not confirmed clear
     const fresh = [], reopened = [];
     for (const m of out.missing || []) {
@@ -800,6 +860,7 @@ async function review() {
     const first = S.fields[todo[0]];
     activate(todo[0], false, first.reopened ? t().reopened(first.label) : t().missed(todo.length, first.label));
   } catch {
+    if (ep !== S.epoch) return;
     S.reviewFailed = true; // the page was NOT checked: never say it's ready to hand in
     finish();
   }
@@ -810,6 +871,7 @@ function finish() {
   S.finishedAt = performance.now();
   const s = Math.round((S.finishedAt - S.startedAt) / 1000);
   S.elapsed = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  S.fields.forEach((f, k) => { if (f.done && !f.skipped) f.doneAt = S.finishedAt + 380 + k * 70; });
   setMode('done');
   setCue('done');
   renderLists();
@@ -871,6 +933,10 @@ function setLang(code) {
   voice.lang = code;
   store.set('nib.lang', code);
   for (const o of document.querySelectorAll('[data-lang]')) o.setAttribute('aria-pressed', String(o.dataset.lang === code));
+  const tab = document.querySelector('.tab');
+  tab.textContent = matchMedia('(pointer: coarse)').matches ? t().startTab : t().startClick;
+  tab.lang = code;
+  $('captionText').lang = code;
   if (voice.onCommand) voice.listen(voice.onCommand); // recognize speech in the new language
 }
 
@@ -935,6 +1001,7 @@ async function answer(q) {
   // Practice mode has no model key, so the drawn form answers "where is…" itself.
   const hit = S.sim && S.mode !== 'start' && S.sim.find(q, S.lang);
   if (hit) { talkDone(); return act({ action: 'find', ...hit }); }
+  const ep = S.epoch;
   try {
     const out = await api('/api/ask', {
       question: q,
@@ -945,6 +1012,7 @@ async function answer(q) {
       lang: S.lang,
     });
     talkDone();
+    if (ep !== S.epoch) return; // the page changed while the question was out: its field numbers are stale
     act(out);
   } catch (e) {
     talkDone();
@@ -992,8 +1060,11 @@ function act(out) {
 // ---------- the handwriting card ----------
 const readback = {
   timer: 0,
+  typing: [],
+  stopTyping() { this.typing.forEach(clearTimeout); this.typing = []; },
   show(image, label) {
     clearTimeout(this.timer);
+    this.stopTyping();
     $('rbImg').src = image;
     $('rbLabel').textContent = label;
     $('rbText').textContent = '';
@@ -1003,13 +1074,14 @@ const readback = {
   result(text, legible) {
     const el = $('rbText');
     $('readback').dataset.state = text ? (legible ? 'ok' : 'unsure') : 'empty';
+    this.stopTyping();
     el.textContent = '';
     if (!text) { el.textContent = 'Nothing written yet'; return; }
-    [...text].forEach((ch, k) => setTimeout(() => { el.textContent += ch; }, k * 28));
+    this.typing = [...text].map((ch, k) => setTimeout(() => { el.textContent += ch; }, k * 28));
   },
   hide(after = 0) {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => { $('readback').hidden = true; }, after);
+    this.timer = setTimeout(() => { this.stopTyping(); $('readback').hidden = true; }, after);
   },
 };
 
@@ -1022,38 +1094,53 @@ function setMode(m) {
   btn.disabled = m === 'reading' || m === 'reveal' || m === 'check';
   if (m === 'reading' || m === 'reveal' || m === 'check') setCue('wait');
   if (m === 'write') setCue('write');
+  if (m === 'confirm') setCue('confirm');
+  if (m === 'idle') setCue('');
 }
 
 function setCue(c) {
   if (c === S.cue) return;
   S.cue = c;
   $('cue').dataset.cue = c;
-  $('cueGlyph').textContent = CUE[c] || { on: '●', write: '✎', done: '✓' }[c] || '';
-  $('cueWord').textContent = CUE[c] ? voice.cueWord(c, false) : { on: 'here', write: 'write', done: 'done', listen: 'listening', think: 'thinking' }[c] || '';
+  app.dataset.cue = c || '';
+  $('cueGlyph').textContent = CUE[c] || { on: '●', write: '✎', done: '✓', error: '!', confirm: '?' }[c] || '';
+  $('cueWord').textContent = CUE[c] ? voice.cueWord(c, false) : { on: 'here', write: 'write', done: 'done', listen: 'listening', think: 'thinking', error: 'retry', confirm: 'keep?' }[c] || '';
 }
 
 function renderLists() {
-  const state = (f, k) => (f.skipped ? 'skipped' : f.done ? 'done' : k === S.i && ['guide', 'write', 'check'].includes(S.mode) ? 'active' : 'todo');
+  const state = (f, k) => (f.skipped ? 'skipped' : f.done ? 'done' : k === S.i && ['guide', 'write', 'check', 'confirm'].includes(S.mode) ? 'active' : 'todo');
+  const prev = S.prevStates || [];
+  S.prevStates = S.fields.map((f, k) => state(f, k));
+  const just = (li, k) => {
+    if (prev[k] !== undefined && prev[k] !== li.dataset.state) li.dataset.just = li.dataset.state;
+    else if (prev.length && prev[k] === undefined) li.dataset.just = 'new';
+  };
   $('progress').replaceChildren(...S.fields.map((f, k) => {
     const li = document.createElement('li');
     li.dataset.state = state(f, k);
+    just(li, k);
     li.title = `${k + 1}. ${f.label}`;
     return li;
   }));
   const doneCount = S.fields.filter(f => f.done).length;
-  $('count').textContent = S.fields.length ? `${doneCount} of ${S.fields.length}` : '';
+  app.style.setProperty('--p', S.fields.length ? doneCount / S.fields.length : 0);
+  $('count').innerHTML = S.fields.length ? `<b>${doneCount}</b> of ${S.fields.length}` : ''; // numbers only
 
   $('panelTitle').textContent = S.title || (S.mode === 'reading' ? 'Reading the page…' : 'No form yet');
   const n = S.fields.length, meta = $('panelMeta'), seek = $('panelFind');
   meta.hidden = !(n || S.title) || S.mode === 'reading';
   meta.textContent = n ? `${n} ${n === 1 ? 'place' : 'places'} · read in ${(S.readSecs ?? 0).toFixed(1)} s` : 'Nothing to fill · ask where anything is';
   seek.hidden = S.mode !== 'find';
-  seek.textContent = S.mode === 'find' ? (S.find?.q ? `Finding: “${S.find.q}”` : 'Finding it on the page') : '';
+  seek.textContent = S.mode === 'find' ? (S.find?.q ? `“${S.find.q}”` : 'it on the page') : '';
   $('fieldList').replaceChildren(...S.fields.map((f, k) => {
     const li = document.createElement('li');
     li.dataset.state = state(f, k);
+    if (f.review) li.dataset.flag = 'review';
+    else if (f.added) li.dataset.flag = 'added';
+    if (li.dataset.state === 'active') li.setAttribute('aria-current', 'step');
+    just(li, k);
     if (S.mode === 'reveal') li.style.animationDelay = `${Math.round(f.revealAt - S.revealStart)}ms`;
-    else li.style.animation = 'none';
+    else if (!li.dataset.just) li.style.animation = 'none';
     const n = document.createElement('span');
     n.className = 'n';
     n.textContent = f.review ? '?' : f.done && !f.skipped ? '✓' : k + 1;
@@ -1062,6 +1149,10 @@ function renderLists() {
     const label = document.createElement('span');
     label.className = 'f-label';
     label.textContent = f.label;
+    const sr = document.createElement('span');
+    sr.className = 'sr';
+    sr.textContent = `, ${f.review ? 'check this' : f.added ? 'caught by the final check' : li.dataset.state}`;
+    label.append(sr);
     const kind = document.createElement('span');
     kind.className = 'f-kind';
     kind.textContent = f.skipped ? 'Skipped' : f.review ? 'Check this' : f.added ? 'Final check' : KIND[f.kind] || 'Write';
@@ -1080,18 +1171,21 @@ function renderLists() {
     li.append(n, body);
     return li;
   }));
-  $('fieldList').querySelector('[data-state="active"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  $('fieldList').querySelector('[data-state="active"]')?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 
   const foot = $('panelFoot');
   if (S.mode === 'done') {
     const filled = S.fields.filter(f => f.done && !f.skipped).length;
-    foot.innerHTML = '';
-    const big = document.createElement('strong');
-    big.textContent = S.elapsed;
-    const small = document.createElement('span');
-    const caught = S.fields.filter(f => f.added).length;
-    small.textContent = `${filled} of ${S.fields.length} filled without help${caught ? ` · final check caught ${caught}` : ''}`;
-    foot.append(big, small);
+    const caught = S.fields.filter(f => f.added).length, look = S.fields.filter(f => f.review || f.skipped || !f.done).length;
+    const clean = !look && !S.reviewFailed;
+    const cell = (k, v, warn) => `<div${warn ? ' class="warn"' : ''}><dt>${k}</dt><dd>${v}</dd></div>`;
+    // Numbers and fixed English only: nothing from the page or the model goes into this HTML.
+    foot.innerHTML = `<p class="ft-kicker">${clean ? 'Completed independently' : 'Finished · needs a look'}</p><strong class="ft-time">${S.elapsed}</strong><span class="ft-unit">start to finish</span><dl class="ft-grid">`
+      + cell('Filled without help', `${filled}<small>/${S.fields.length}</small>`)
+      + cell('Read the page in', `${(S.readSecs ?? 0).toFixed(1)}<small> s</small>`)
+      + cell('Final check caught', S.reviewFailed ? '–' : caught)
+      + cell('Needs another look', look, look > 0 || S.reviewFailed) + '</dl>';
+    foot.toggleAttribute('data-open', !clean);
     foot.hidden = false;
   } else foot.hidden = true;
 }
@@ -1103,10 +1197,11 @@ function hud(now) {
   S.trackN = 0;
   S.hudAt = now;
   const hands = now - (S.handAt || 0) < 500 ? S.handPts.length : 0;
-  const track = S.sim ? 'Practice mode: the pointer is the fingertip' : `Hand tracking <b>${S.fps} fps</b> · ${hands ? `${hands} ${hands === 1 ? 'hand' : 'hands'} seen` : 'no hand in view'}`;
-  const lock = !S.sim && S.pointerLabel ? '<br>Pointing hand <b>locked</b> (yellow)' : '';
-  const ai = S.lastApi ? `<br>Last AI call: ${S.lastApi.job} <b>${S.lastApi.secs.toFixed(1)} s</b>` : '';
-  $('panelHud').innerHTML = track + lock + ai;
+  const row = (k, v, ok = true) => `<span>${k}</span><b${ok ? '' : ' class="warn"'}>${v}</b>`;
+  const ai = S.lastApi ? row('Last AI call', `${S.lastApi.job} · ${S.lastApi.secs.toFixed(1)} s`) : '';
+  $('panelHud').innerHTML = S.sim ? row('Mode', 'Practice') + row('Fingertip', 'your pointer') + ai
+    : row('Hand tracking', `${S.fps} fps`, S.fps >= 15) + row('Hands in view', hands || 'none', !!hands)
+      + (S.pointerLabel ? row('Pointing hand', 'locked') : '') + ai;
 }
 
 function status(text) { $('status').textContent = text; }
@@ -1177,6 +1272,7 @@ $('talk').addEventListener('pointerup', () => {
 $('talk').addEventListener('click', e => { if (e.detail === 0) (talk.live ? talkEnd() : talkStart()); }); // keyboard
 
 $('startBtn').addEventListener('click', begin);
+$('rbRedo').addEventListener('click', redo);
 $('action').addEventListener('click', primary);
 
 for (const b of document.querySelectorAll('[data-lang]')) {
@@ -1205,10 +1301,12 @@ addEventListener('keyup', e => {
 });
 
 // Which model reads the form, so nobody demos with reading switched off by accident.
+const offline = () => { $('reader').textContent = 'Form reader offline · practice mode still works'; app.dataset.reader = 'off'; };
 fetch('/api/status').then(r => r.json()).then(s => {
-  $('reader').textContent = s.reader ? `Form reading: ${s.reader}` : 'Form reading is off: add a model key to nib/.env';
-  $('reader').dataset.on = s.reader ? 'true' : 'false';
-}).catch(() => { $('reader').textContent = 'Server not reachable'; });
+  if (!s.reader) return offline();
+  $('reader').textContent = `Form reader: ${s.reader}`;
+  app.dataset.reader = 'on';
+}).catch(offline);
 
 if (matchMedia('(pointer: coarse)').matches) {
   document.querySelector('.lede').textContent = document.querySelector('.lede').textContent.replace(' or the Space key', '');
@@ -1218,13 +1316,15 @@ window.nibAsk = answer; // and type a question as if it were spoken (a fallback 
 if (S.sim) {
   if (new URLSearchParams(location.search).has('bot')) import('./bot.js').then(m => m.startBot(S)); // robot finger test
   app.dataset.sim = '';
-  status('Practice mode: your pointer is the fingertip. Tap Space when you finish writing; hold Space to ask.');
+  status(matchMedia('(pointer: coarse)').matches ? 'Practice mode: drag your finger across the picture. Use the yellow button when you finish writing.' : 'Practice mode: your pointer is the fingertip. Tap Space when you finish writing; hold Space to ask.');
   $('modeLink').href = './';
   $('modeLink').textContent = 'Use the camera instead';
 } else {
   loadHands();
+  listCameras(); // a laptop with a saved camera permission and a USB webcam shows the picker before Start
   if (!navigator.mediaDevices?.getUserMedia) status('This browser cannot open the camera. Use Chrome or Safari over https.');
 }
+setLang(S.lang);
 setMode('start');
 renderLists();
 requestAnimationFrame(loop);

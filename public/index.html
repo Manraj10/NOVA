@@ -19,7 +19,7 @@
       <p class="doc" id="docTitle"></p>
       <div class="steps">
         <span class="count" id="count"></span>
-        <ol class="progress" id="progress" aria-label="Places to fill"></ol>
+        <ol class="progress" id="progress" aria-hidden="true"></ol>
       </div>
     </header>
 
@@ -32,23 +32,26 @@
           <figcaption>
             <span class="rb-label" id="rbLabel"></span>
             <span class="rb-text" id="rbText"></span>
+            <button class="rb-redo" id="rbRedo" type="button">Write it again</button>
           </figcaption>
         </figure>
       </div>
 
-      <aside class="panel" aria-label="Places to fill">
+      <aside class="panel" aria-label="What Nib sees">
         <p class="panel-label">What Nib sees</p>
         <h2 class="panel-title" id="panelTitle">No form yet</h2>
         <p class="panel-meta" id="panelMeta" hidden></p>
         <p class="panel-find" id="panelFind" hidden></p>
-        <ol class="fields" id="fieldList"></ol>
+        <ol class="fields" id="fieldList" tabindex="0" aria-label="Places to fill"></ol>
         <div class="panel-foot" id="panelFoot" hidden></div>
         <p class="panel-hud" id="panelHud" aria-hidden="true"></p>
       </aside>
 
       <div class="start">
         <button class="start-hit" id="startBtn">Start reading a form</button>
+        <div class="start-grid">
         <div class="start-body">
+          <div class="alert" id="alert" role="alert" hidden><strong></strong><p></p></div>
           <p class="tab" aria-hidden="true">Tap anywhere to start</p>
           <p class="lede">A screen reader for paper. Put any page flat under the camera: Nib reads it to you, takes your finger to whatever you ask about, and guides you to every blank. Hold the screen or the Space key to ask it anything.</p>
           <div class="controls">
@@ -58,13 +61,17 @@
               <button data-lang="hi" lang="hi">हिन्दी</button>
               <button data-lang="zh" lang="zh">中文</button>
             </div>
-            <label class="cam"><span>Camera</span>
+            <label class="cam" hidden><span>Camera</span>
               <select id="camera"><option value="">Default camera</option></select>
             </label>
           </div>
           <p class="status" id="status" role="status"></p>
           <p class="status reader" id="reader"></p>
           <a class="mode-link" id="modeLink" href="?sim">Practice with a sample form</a>
+        </div>
+        <figure class="demo" aria-hidden="true">
+          <div class="demo-paper"><span class="demo-hl"></span><span class="demo-ring"></span><span class="demo-ring"></span><span class="demo-ring"></span><span class="demo-flag">FULL NAME</span><span class="demo-tip"></span></div>
+        </figure>
         </div>
       </div>
     </section>
