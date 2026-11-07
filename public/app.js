@@ -1255,6 +1255,7 @@ function talkStart({ auto = false } = {}) {
   voice.unlock();
   talk.live = voice.hear(words => showHeard(words), auto ? () => talkEnd() : null);
   if (!talk.live) return;
+  S.earsPttGeneration = (S.earsPttGeneration || 0) + 1; // the ears drop anything captured before a hold-to-ask
   app.dataset.talk = 'listening';
   $('talk').setAttribute('aria-pressed', 'true');
   setCue('listen');
@@ -1268,6 +1269,7 @@ function talkStart({ auto = false } = {}) {
 async function talkEnd() {
   const live = talk.live;
   if (!live) return;
+  S.earsPttGeneration = (S.earsPttGeneration || 0) + 1;
   talk.live = null;
   clearTimeout(talk.auto);
   $('talk').setAttribute('aria-pressed', 'false');
