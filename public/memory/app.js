@@ -201,7 +201,7 @@ const fixWake = t => t
 
 // In the room, a sentence that is plainly an edit ("make it darker", "can you add a radio") counts any time,
 // with or without "Hey Nib". Other talk near the phone (the presenter, the judges) never changes the room.
-const EDIT = /^(?:[a-z ]{0,24}\b(?:but|so|and|now|then|just) )?(?:(?:no|ok|okay|yes|yeah|good|nice|great|but|and|so|actually|also|um|uh|hmm|wait|now|then|just)[\s,]+)*(?:make|change|add|put|remove|take|move|turn|paint|replace|swap|fix|show|give|bring|can you|could you|would you|please|i want|id like|i would like|there should|there was|there were|there is|theres|it should|it was|it needs|let it|let there|less|more)\b/;
+const EDIT = /^(?:(?:no|ok|okay|yes|yeah|good job|great job|nice job|looks good|thats good|good|nice|great|but|and|so|actually|also|um|uh|hmm|wait|now|then|just|can you|could you|would you|please)[\s,]+)*(?:make (?:it|the|there|everything|this)|change (?:it|the|that)|add (?:a|an|the|some|more)|remove (?:the|that)|take out the|get rid of|replace the|swap the|paint the|fix it|fix the|i want (?:it|the|there|you to (?:make|change|add|remove|fix))|id like (?:it|the|there)|i would like (?:it|the|there)|there should be|it should be|let there be)\b/;
 function heard(text, { typed = false, token = null, at } = {}) {
   if (leaving || listeningPaused) return;
   token ||= captureContext();
@@ -577,7 +577,7 @@ function confirmAndListen() {
   if (leaving || listeningPaused || step !== 'room') return;
   const owner = captureContext();
   openWindow(16000, false);
-  voice.say(L.confirm).then(() => { if (contextCurrent(owner)) openWindow(14000); }); // Nib asked, so a current answer counts.
+  voice.say(L.confirm).then(() => { if (contextCurrent(owner) && !collected) openWindow(14000); }); // a change said over the question keeps its own 1.8 s commit // Nib asked, so a current answer counts.
 }
 
 let muted = false, soundTok = 0;

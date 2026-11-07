@@ -19,7 +19,7 @@ const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो
 // Accept recognizer spellings (Mib, Nim, Ned, Nid all happened live) and joined "HeyNib", never an embedded mention or "Nibbles".
 // The name as phones actually transcribe it (all seen live): nib, neb, nip, nim, mib, ned, nid, knib…
 // and run together with "hey": "HeNeB", "Hennip", "Heynib".
-const NAME = '(?:k?n+[iey]+[bp]+[esh]?|n[iey]+d|n[iy]m|m[iey][bdp]|nick|knob)';
+const NAME = '(?:k?n+[iey]+[bp]+[esh]?|n[iey]+d|n[iy]m|m[aiey][bdp]|nick|knob)';
 const HEY = '(?:hey|hay|hei|hen|he|hai)';
 // With "Hey" in front, anything may follow. A bare name must be addressed ("Nib." / "Nib, what's this?"),
 // so a presenter saying "Nib reads the form…" in the pitch doesn't trigger it.
