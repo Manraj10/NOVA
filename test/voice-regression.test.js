@@ -218,3 +218,11 @@ test('iOS PTT completion restores playback when the app microphone is closed', a
   await stopped;
   assert.equal(h.sessions.at(-1), 'playback');
 });
+
+test('long instructions use complete system speech without a cloud request', async () => {
+  const h = setup(), text = 'Write the complete instruction. '.repeat(15);
+  const promise = h.voice.say(text);
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.system[0]?.text, text);
+  h.finishSystem(); await promise;
+});

@@ -154,11 +154,19 @@ test('bare Nib interrupts coaching and preserves an already-captured ordered que
   assert.deepEqual(f.answers,['Where is the phone number?']);assert.equal(f.S.awaitQ,0);
 });
 
-test('explicit Hey Nib question interrupts playback even when matching recent text', async t => {
+test('a new explicit Hey Nib question interrupts playback', async t => {
   const f=fixture(t);realEcho(f);await f.context.startEars();coach(f);
-  f.context.voice.recent.push('Hey Nib, where is the total?');f.phrase();
+  f.phrase();
   await f.respond(0,'Hey Nib, where is the total?');
   assert.deepEqual(f.answers,['where is the total?']);
+});
+
+test('a full wake command matching assistant speech cannot execute itself', async t => {
+  const f=fixture(t,'write');realEcho(f);await f.context.startEars();coach(f);
+  f.context.voice.recent.push('Hey Nib, done');f.phrase();
+  f.context.voice.speaking=false;f.context.voice.endedAt=f.timers.now();
+  await f.timers.advance(2000);await f.respond(0,'Hey Nib, done');
+  assert.deepEqual(f.answers,[]);assert.equal(f.finishes(),0);
 });
 
 test('capture snapshots are immutable and quiet snapshots do not blacklist old commands', () => {

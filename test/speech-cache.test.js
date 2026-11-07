@@ -98,3 +98,16 @@ test('prose punctuation changes use system-voice fallback rather than broad toke
   await assert.rejects(speak({ text: 'Move up.', lang: 'en' }), e => e.status === 502);
   assert.equal(requests.length, before + 2);
 });
+
+// Long arrive/coaching instructions must never become a validated partial clip.
+test('401-character script is refused before generation rather than silently truncated', async () => {
+  const before = requests.length;
+  await assert.rejects(speak({ text: 'x'.repeat(401), lang: 'en' }), e => e.status === 413);
+  assert.equal(requests.length, before);
+});
+test('400-character script remains eligible and is validated in full', async () => {
+  const before = requests.length; transcript = 'z'.repeat(400);
+  await speak({ text: transcript, lang: 'en' });
+  assert.equal(requests.length, before + 1);
+  assert.ok(requests.at(-1).messages.at(-1).content.endsWith(transcript));
+});

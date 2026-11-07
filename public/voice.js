@@ -76,8 +76,9 @@ export const voice = {
     const lang = this.lang, key = JSON.stringify([lang, text]);
     let e = this.clips.get(key);
     if (e) return e;
-    e = { done: false, pcm: null, rate: 24000 };
-    e.p = !this.cloud ? Promise.resolve() : fetch('/api/speak', {
+    const fallback = !this.cloud || text.trim().length > 400;
+    e = { done: fallback, pcm: null, rate: 24000 };
+    e.p = fallback ? Promise.resolve() : fetch('/api/speak', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, lang }),
     }).then(async r => {
       if (r.status === 503) this.cloud = false; // no key on the server: stop asking
@@ -303,11 +304,11 @@ export const voice = {
     // Recent words are not a permanent command blacklist: a genuine "done"
     // begun after playback's tail must work, however fast or slow ASR returns.
     if (!context.active) return false;
-    // A deliberate wake phrase may interrupt playback. It only opens a question
-    // window (or asks explicitly), rather than accepting/advancing an answer.
+    // A bare wake phrase may interrupt playback by opening a question window.
+    // A full wake+command still must not repeat words from our own speaker.
     const low = String(text || '').trim().toLowerCase();
     const bare = low.replace(/[.,!?。！？"']/g, '').trim();
-    if (captured && (BARE.test(bare) || WAKE.test(low))) return false;
+    if (captured && BARE.test(bare)) return false;
     const n = s => String(s).toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
     const h = n(text);
     return !!h && context.recent.some(line => n(line).includes(h));
