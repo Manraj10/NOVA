@@ -126,7 +126,7 @@ function command(words) {
   const go = (line, url) => { running = false; gen++; queue.length = 0; voice.stop(); voice.say(line).then(() => { location.href = url; }); };
   const nav = voice.navigation(t);
   if (nav === 'home') go('Going home.', './');
-  else if (nav === 'paper') go('Opening Paper.', 'paper.html');
+  else if (nav === 'paper') go('Opening Trace.', 'paper.html');
   else if (nav === 'memory') go('Opening Memory.', 'memory/');
   else if (nav === 'around') voice.say("You're in Around me.");
   else if (/^(stop|pause|quiet|be quiet)$/.test(t)) { running = false; gen++; queue.length = 0; voice.stop(); voice.say('Paused. Say Nib, start, to go on.'); }

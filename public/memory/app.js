@@ -51,7 +51,7 @@ const L = {
   broke: 'Something went wrong. Say try again.',
   over: 'Starting over. Tell me about a room you remember.',
   here: 'You’re already in Memory.',
-  home: 'Going home.', paper: 'Opening Paper.', around: 'Opening Around me.',
+  home: 'Going home.', paper: 'Opening Trace.', around: 'Opening Around me.',
   example: 'Opening the example.',
   fixExample: 'The example can’t be changed. Tell me your own room to try that.',
 };
