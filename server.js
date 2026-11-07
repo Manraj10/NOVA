@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseForm, readField, ask, reviewForm, status, provider, aroundFrame, aroundAsk } from './lib/ai.js';
 import { speak } from './lib/speak.js';
 import { hear } from './lib/hear.js';
+import { MEMORY_ROUTES } from './lib/memory.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pub = join(root, 'public');
@@ -23,7 +24,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.ico': 'image/x-icon',
 };
-const ROUTES = { '/api/parse': parseForm, '/api/read': readField, '/api/ask': ask, '/api/review': reviewForm, '/api/speak': speak, '/api/hear': hear, '/api/around': aroundFrame, '/api/around-ask': aroundAsk };
+const ROUTES = { '/api/parse': parseForm, '/api/read': readField, '/api/ask': ask, '/api/review': reviewForm, '/api/speak': speak, '/api/hear': hear, '/api/around': aroundFrame, '/api/around-ask': aroundAsk, ...MEMORY_ROUTES };
 
 async function readJson(req) {
   if (req.body && typeof req.body === 'object') return req.body; // Vercel already parsed it
@@ -49,7 +50,8 @@ export async function handler(req, res) {
       return json(res, 200, await ROUTES[pathname](await readJson(req)));
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed.' });
-    const rel = normalize(decodeURIComponent(pathname)).replace(/^[\\/]+/, '') || 'index.html';
+    let rel = normalize(decodeURIComponent(pathname)).replace(/^[\\/]+/, '') || 'index.html';
+    if (pathname.endsWith('/') && rel !== 'index.html') rel = join(rel, 'index.html'); // /memory/ -> memory/index.html, like Vercel
     const file = join(pub, rel);
     if (file !== pub && !file.startsWith(pub + sep)) return json(res, 403, { error: 'Forbidden.' });
     const data = await readFile(file);
