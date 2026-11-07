@@ -928,8 +928,9 @@ async function settlePage() {
 // The page moved: read it again, keep every answer, and carry on from the same place.
 // resume 'read': the person just wrote, so read that field at its new position next.
 async function pageMoved(resume) {
-  const ep = ++S.epoch, cur = S.fields[S.i];
+  const ep = ++S.epoch, cur = S.fields[S.i], oldMode = S.mode, oldFind = S.find;
   S.find = null;
+  S.line = null; // a moved page invalidates the pen-hand writing baseline
   S.driftOn = false;
   S.onTarget = false;
   S.arrivedSince = 0;
@@ -937,8 +938,69 @@ async function pageMoved(resume) {
   readback.hide();
   setMode('reading');
   renderLists();
+  // Use two fresh FROZEN frames. The paper may still move after the alarm.
+  try {
+    let previous = null;
+    for (let attempt = 0; attempt < 4 && !S.sim; attempt++) {
+      const shot = {};
+      snapshot(null, shot);
+      const model = drift.relocation({ img: shot.canvas, w: shot.w, h: shot.h }, handRects(performance.now()));
+      const project = (m, x, y) => ({ x: m.xx * x + m.xy * y + m.tx, y: m.yx * x + m.yy * y + m.ty });
+      const agrees = model && previous && model.w === previous.w && model.h === previous.h
+        && [[0, 0], [model.w, 0], [0, model.h], [model.w, model.h]].every(([x, y]) => {
+          const a = project(previous, x, y), b = project(model, x, y);
+          return Math.hypot(a.x - b.x, a.y - b.y) <= model.analysisScale;
+        });
+      if (agrees) {
+        const mapBox = f => {
+          if (f.stale) return { ...f };
+          if (!['x0', 'y0', 'x1', 'y1'].every(k => Number.isFinite(f[k])) || f.x0 >= f.x1 || f.y0 >= f.y1) return null;
+          // Keep the quadrilateral across corrections: re-rotating a previous
+          // axis-aligned bounding box would inflate it on every move.
+          const original = f.pageCorners || [[f.x0, f.y0], [f.x1, f.y0], [f.x0, f.y1], [f.x1, f.y1]];
+          const corners = original.map(([x, y]) => project(model, x * model.w, y * model.h));
+          const xs = corners.map(p => p.x / model.w), ys = corners.map(p => p.y / model.h);
+          const box = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+          if (box.x0 < 0 || box.y0 < 0 || box.x1 > 1 || box.y1 > 1) return null;
+          return { ...f, ...box, pageCorners: corners.map(p => [p.x / model.w, p.y / model.h]) };
+        };
+        const mapped = S.fields.map(mapBox), mappedFind = oldFind ? mapBox(oldFind) : null;
+        if (mapped.every(Boolean) && (!oldFind || mappedFind)) {
+          const before = S.fields;
+          S.fields = mapped;
+          // Seed only printed detail outside current hands, in the EXACT fitted frame.
+          const F = mapped.filter(f => !f.stale), c = v => Math.min(1, Math.max(0, v)), margin = 0.06;
+          const region = { x0: c(Math.min(...F.map(f => f.x0)) - margin), y0: c(Math.min(...F.map(f => f.y0)) - margin),
+            x1: c(Math.max(...F.map(f => f.x1)) + margin), y1: c(Math.max(...F.map(f => f.y1)) + margin) };
+          S.driftOn = F.length > 0 && drift.capture({ img: shot.canvas, w: shot.w, h: shot.h }, region, handRects(performance.now()));
+          if (S.driftOn) {
+            S.reviewed = false;
+            S.pauseSince = 0; S.pauseSaid = false; S.lastCue = 0; S.lastDir = null;
+            S.tip = null; S.tipSeen = 0; S.pointerIdx = -1; // require a fresh fingertip/dwell
+            const adjusted = { en: 'The page moved. I adjusted.', es: 'La página se movió. Ya la ajusté.',
+              hi: 'पन्ना हिला था। मैंने जगह ठीक कर ली है।', zh: '纸张移动了。我已调整位置。' };
+            await say(adjusted[S.lang] || adjusted.en);
+            if (ep !== S.epoch) return;
+            if (resume === 'read' && cur && !cur.done) {
+              setMode('write'); renderLists(); return finishWriting();
+            }
+            if (oldMode === 'find' && mappedFind) { S.find = mappedFind; setMode('find'); }
+            else setMode(oldMode === 'write' || oldMode === 'guide' ? oldMode : 'guide');
+            renderLists();
+            return;
+          }
+          S.fields = before; // failed recapture must not become accepted geometry
+        }
+        break;
+      }
+      previous = model;
+      await wait(150);
+      if (ep !== S.epoch) return;
+    }
+  } catch { /* unknown position: use the full reread below */ }
+  if (ep !== S.epoch) return;
   await say(t().moved);
-  await wait(600); // let the page settle
+  await wait(300);
   if (ep !== S.epoch) return;
   S.readT0 = performance.now();
   try {
@@ -956,7 +1018,7 @@ async function pageMoved(resume) {
       if (k >= 0) {
         used.add(k);
         const { x0, y0, x1, y1, say: line, hint } = fresh[k];
-        merged.push({ ...old, x0, y0, x1, y1, say: line || old.say, hint: hint || old.hint, stale: false });
+        merged.push({ ...old, x0, y0, x1, y1, say: line || old.say, hint: hint || old.hint, stale: false, pageCorners: undefined });
       } else if (old.done) merged.push({ ...old, stale: true }); // answer kept; its box is unknown now, so it isn't drawn
       // an unfilled place the new read can't find is dropped: the final check looks at the whole page
     }
