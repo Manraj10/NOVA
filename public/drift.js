@@ -1,5 +1,5 @@
-// A movement alarm, not page tracking: a positive result invalidates the old boxes.
-// No camera coordinates are corrected here. Re-read the form, then capture again.
+// A movement guard with conservative local relocation. An alarm pauses guidance;
+// only a fresh, well-supported fit may move known boxes without another model read.
 // A portrait page often fills under half a landscape webcam image. At 192 wide,
 // its small print collapses into a handful of pixels; 320 preserves useful detail
 // while retaining the same bounded patch count and search work.
@@ -185,7 +185,12 @@ function registered(points, allCount, spreadW, spreadH) {
     if (inliers.length > best.length) best = inliers;
   }
   if (best.length < Math.max(MIN_ANCHORS, allCount * 0.5) || !spread(best, spreadW, spreadH)) return null;
-  return fit(best);
+  const model = fit(best);
+  const errors = best.map(p => Math.hypot(model.a * p.x - model.b * p.y + model.tx - p.u,
+    model.b * p.x + model.a * p.y + model.ty - p.v));
+  return { ...model, inliers: best.length, total: allCount,
+    fraction: best.length / allCount, rms: Math.sqrt(errors.reduce((s, e) => s + e * e, 0) / errors.length),
+    maxError: Math.max(...errors) };
 }
 
 /**
@@ -209,8 +214,8 @@ function registered(points, allCount, spreadW, spreadH) {
  */
 export function makeDrift({ readFrame = browserReader(), now = () => performance.now(), intervalMs = 350 } = {}) {
   let reference = null, latched = true, state = 'uncaptured', reason = 'No reference frame';
-  let lastCheck = -Infinity, suspect = 0;
-  const latch = (nextState, why) => { latched = true; state = nextState; reason = why; return true; };
+  let lastCheck = -Infinity, suspect = 0, lastModel = null;
+  const latch = (nextState, why) => { latched = true; state = nextState; reason = why; if (nextState !== 'moved') lastModel = null; return true; };
   const occluded = why => {
     state = 'occluded'; reason = why; suspect = 0; lastCheck = -Infinity; return false;
   };
@@ -222,13 +227,45 @@ export function makeDrift({ readFrame = browserReader(), now = () => performance
     if (Math.min(w, h) < 32) throw Error('Source is too narrow');
     return { ...dims, width: w, height: h, gray: grayFrame(readFrame(src, w, h), w, h) };
   };
+  // Return source-pixel affine coefficients, not analysis pixels or frame fractions.
+  // Rounded analysis dimensions can have slightly different x/y scale factors.
+  const trustworthy = model => {
+    if (!model || model.fraction < 0.75 || model.rms > 0.65 || model.maxError > 1.25
+      || Math.abs(Math.hypot(model.a, model.b) - 1) > 0.06
+      || Math.abs(Math.atan2(model.b, model.a)) > 1.5 * Math.PI / 180) return null;
+    const sx = reference.w / reference.width, sy = reference.h / reference.height;
+    return Object.freeze({ xx: model.a, xy: -model.b * sx / sy,
+      yx: model.b * sy / sx, yy: model.a, tx: model.tx * sx, ty: model.ty * sy,
+      w: reference.w, h: reference.h, analysisScale: Math.max(sx, sy),
+      inliers: model.inliers, fraction: model.fraction, rms: model.rms });
+  };
+  const relocation = (src, handRegions = []) => {
+    if (!reference) return null;
+    const dims = dimensions(src);
+    if (!dims || dims.w !== reference.w || dims.h !== reference.h || !Array.isArray(handRegions)) return null;
+    const regions = handRegions.map(normalizedRect);
+    if (regions.some(r => !r)) return null;
+    const { width: w, height: h, spreadW, spreadH } = reference;
+    const points = unmasked(reference.points, regions, w, h);
+    if (points.length < reference.points.length * 0.35 || !spread(points, spreadW, spreadH)) return null;
+    try {
+      const frame = read(src), table = integral(frame.gray, w, h);
+      return trustworthy(registered(matches(points, frame.gray, table, w, h, regions), points.length, spreadW, spreadH));
+    } catch { return null; }
+  };
   return {
-    capture(src, documentRegion = FULL_FRAME) {
-      reference = null; suspect = 0; lastCheck = -Infinity;
+    // Refit the supplied frozen frame even after an alarm. The caller must compare
+    // two fresh fits, map that exact final frame, and recapture before resuming.
+    relocation,
+    get lastModel() { return lastModel; },
+    capture(src, documentRegion = FULL_FRAME, handRegions = []) {
+      reference = null; suspect = 0; lastModel = null; lastCheck = -Infinity;
       try {
         const region = normalizedRect(documentRegion);
         if (!region) { latch('unavailable', 'Invalid document region'); return false; }
-        const frame = read(src), points = anchors(frame.gray, frame.width, frame.height, region);
+        const masks = Array.isArray(handRegions) ? handRegions.map(normalizedRect) : [null];
+        if (masks.some(r => !r)) { latch('unavailable', 'Invalid capture hand bounds'); return false; }
+        const frame = read(src), points = unmasked(anchors(frame.gray, frame.width, frame.height, region), masks, frame.width, frame.height);
         const spreadW = (region.x1 - region.x0) * frame.width, spreadH = (region.y1 - region.y0) * frame.height;
         if (!spread(points, spreadW, spreadH)) {
           latch('low-texture', 'Not enough distributed printed detail to check movement'); return false;
@@ -264,6 +301,7 @@ export function makeDrift({ readFrame = browserReader(), now = () => performance
       const table = integral(frame.gray, w, h);
       const still = points.filter(p => correlation(p, frame.gray, table, w, p.x, p.y) >= STILL).length;
       let why = '';
+      lastModel = null;
       if (still / points.length < 0.75) {
         const model = registered(matches(points, frame.gray, table, w, h, regions), points.length, spreadW, spreadH);
         if (model) {
@@ -271,7 +309,7 @@ export function makeDrift({ readFrame = browserReader(), now = () => performance
           const displacement = Math.hypot(model.a * w / 2 - model.b * h / 2 + model.tx - w / 2,
             model.b * w / 2 + model.a * h / 2 + model.ty - h / 2);
           if (displacement >= SHIFT || angle >= 2.5 * Math.PI / 180 || Math.abs(scale - 1) >= 0.035)
-            why = 'Printed page geometry changed';
+            { why = 'Printed page geometry changed'; lastModel = trustworthy(model); }
         } else why = 'Printed page position cannot be verified';
       }
       if (why) {
