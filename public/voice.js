@@ -43,6 +43,26 @@ export const voice = {
     const load = () => { this.voices = speechSynthesis.getVoices(); };
     load();
     speechSynthesis.addEventListener?.('voiceschanged', load);
+    // Every mode uses the same ears. A later transcription failure must be
+    // audible even when that service (or the paid speech service) is down.
+    if (!this.hearingFailureListener && window.addEventListener) {
+      this.voicePageActive = true;
+      this.hearingFailureListener = event => {
+        if (!this.voicePageActive || document.hidden) return;
+        const reason = event.detail?.reason;
+        if (!['transcription-failed', 'transcription-timeout', 'queue-full'].includes(reason)) return;
+        const now = performance.now();
+        if (Number.isFinite(this.lastHearingWarning) && now - this.lastHearingWarning < 30000) return;
+        this.lastHearingWarning = now;
+        const line = reason === 'queue-full'
+          ? 'I missed that. Please wait a moment, then try again.'
+          : "Voice input isn't working right now. Please try again in a moment, or use the on-screen controls.";
+        this.say(line, { system: true });
+      };
+      window.addEventListener('nib:voice-drop', this.hearingFailureListener);
+      window.addEventListener('pagehide', () => { this.voicePageActive = false; });
+      window.addEventListener('pageshow', () => { this.voicePageActive = true; });
+    }
   },
 
   // Audio and speech only start after a user gesture.
@@ -129,7 +149,7 @@ export const voice = {
   // cue: short direction words. They never cut off a full instruction.
   // The natural voice speaks if its clip is ready (cues) or arrives within 1.5 s (instructions);
   // otherwise the built-in voice says it, so a slow network never leaves the person in silence.
-  say(text, { cue = false, soft = false } = {}) {
+  say(text, { cue = false, soft = false, system = false } = {}) {
     if (!text) return Promise.resolve();
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
@@ -169,7 +189,9 @@ export const voice = {
       const watchdog = ms => { clearTimeout(timer); timer = setTimeout(() => end(), ms); };
       this.finishCurrent = () => end(true);
       watchdog(4000 + text.length * 110);
-      const e = this.clip(text);
+      // Failure/status speech must not make another request to a failed service.
+      // Keep all normal cancellation, echo and completion guards around it.
+      const e = system ? { done: true, pcm: null } : this.clip(text);
       const go = () => {
         if (done || this.seq !== my || this.current !== token) return end(true);
         if (e.pcm && this.ctx?.state === 'running') {
