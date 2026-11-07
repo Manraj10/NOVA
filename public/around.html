@@ -22,7 +22,7 @@
     <h1 class="mode-title">Around me</h1>
     <span id="count" class="count">Nothing yet</span>
   </header>
-  <section id="aroundControls" class="sheet glass" aria-label="Spoken observations">
+  <section id="aroundControls" inert class="sheet glass" aria-label="Spoken observations">
     <p id="caption" class="caption" aria-live="off" aria-atomic="true">Stay in one place. Turn slowly to hear what is nearby.</p>
     <button id="ask" class="primary" type="button" aria-label="Hear a summary of the latest camera view">What’s around me?</button>
   </section>
@@ -34,6 +34,13 @@
     <p class="fine">Say “what’s around me” or tap the screen to hear a summary. Distance estimates are approximate.</p>
   </section>
 </main>
+<script type="module">
+// Keep controls behind the start screen out of keyboard/VoiceOver navigation.
+// This follows media readiness without owning the camera or narration loop.
+const controls = document.getElementById('aroundControls');
+const camera = document.getElementById('video');
+camera.addEventListener('playing', () => { controls.inert = false; });
+</script>
 <script type="module" src="around-app.js"></script>
 </body>
 </html>
