@@ -76,7 +76,7 @@ export function makeAroundCamera({ video, phone = false, portrait = () => innerH
         session.lens = 'main';
       }
     }
-    if (settings(session.track).facingMode === 'user') session.lens = 'front';
+    if (settings(session.track).facingMode === 'user') { session.lens = 'front'; session.verifiedDevice = false; }
     await tune(session);
   };
   const acquire = async session => {

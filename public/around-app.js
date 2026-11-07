@@ -73,8 +73,8 @@ function start() {
   return pending;
 }
 
-// Camera owns capture tracks; the existing ears own transcription. Returning
-// their controller from startEars allows pagehide to abort its pending queue.
+// Camera owns capture tracks; the existing ears own transcription. The owner's
+// exposed controller lets background/pagehide abort its queue without new ears.
 let cameraStarting = null, cameraRecovering = null, cameraLifecycle = 0;
 let cameraHadStarted = false, cameraWatchStarted = false, cameraResumeWanted = false;
 let cameraEars = null, cameraBoundMic = null, cameraMicBinding = null, cameraOrientationTimer = null;
@@ -107,13 +107,22 @@ async function bindCameraMic(mic, owner) {
   cameraMicBinding = binding;
   binding.promise = (async () => {
     try {
-      const ears = await startEars(mic);
-      if (owner !== cameraLifecycle || cameraMicBinding !== binding) { ears?.stop(); return; }
-      if (!ears || typeof ears.stop !== 'function') { voice.micOpen = false; return; }
+      const returned = await startEars(mic);
+      const ears = returned || window.nibAround?.ears;
+      if (owner !== cameraLifecycle || cameraMicBinding !== binding) {
+        if (ears?.stream === mic && ears !== cameraEars) ears.stop();
+        return;
+      }
+      if (!ears || typeof ears.stop !== 'function' || ears.stream !== mic) { voice.micOpen = false; return; }
       cameraEars = ears; cameraBoundMic = mic;
     } finally { if (cameraMicBinding === binding) cameraMicBinding = null; }
   })();
   return binding.promise;
+}
+function stopCameraEars() {
+  for (const ears of new Set([cameraEars, window.nibAround?.ears])) ears?.stop();
+  cameraEars = null; cameraBoundMic = null; cameraMicBinding = null;
+  voice.micOpen = false;
 }
 function recoverAroundCamera() {
   if (!cameraHadStarted || document.hidden || cameraRecovering) return cameraRecovering;
@@ -142,6 +151,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     cameraResumeWanted = running; running = false; gen++; queue.length = 0;
     cameraLifecycle++; cameraStarting = null; cameraRecovering = null;
+    stopCameraEars();
     voice.stop({ resumeEars: false }); camera.suspend();
     if (!cameraHadStarted) $('start').hidden = false;
   } else recoverAroundCamera();
@@ -156,8 +166,7 @@ addEventListener('pagehide', () => {
   cameraLifecycle++; running = false; gen++; queue.length = 0;
   cameraStarting = null; cameraRecovering = null; cameraResumeWanted = false;
   clearTimeout(cameraOrientationTimer);
-  cameraEars?.stop(); cameraEars = null; cameraBoundMic = null;
-  cameraMicBinding = null;
+  stopCameraEars();
   camera.stop(); voice.stop({ resumeEars: false }); voice.micOpen = false;
   cameraHadStarted = false;
   if ($('cameraLens')) $('cameraLens').hidden = true;
