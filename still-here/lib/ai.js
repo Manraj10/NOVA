@@ -1,7 +1,7 @@
 // Every model call the app makes, through the event's OpenRouter key. The key never leaves the server.
-//   scene:  photo + memory -> the front of the room as remembered (wide image)
+//   scene:  spoken memory -> the front of the room as remembered (wide image)
 //   back:   the front's two edge strips -> the rest of the room, so the loop closes at 360 degrees
-//   labels: photo + scene + memory -> every element tagged photo / memory / invented, plus a narration line
+//   labels: scene + memory -> every element tagged "from your words" or "imagined", plus a narration line
 //   ask:    memory -> one warm question back
 //   sound:  memory -> a short clip of what the room sounded like (Lyria)
 //   hear / speak: voice in and out
@@ -57,14 +57,11 @@ async function paint(content) {
   return Promise.any([first, backup]).catch(e => { throw e.errors?.[0] || e; });
 }
 
-export async function scene({ photo, memory } = {}) {
+export async function scene({ memory } = {}) {
   const m = str(memory, 1500);
-  if (!m) throw fail('Tell me the memory first.', 400);
-  return paint([
-    { type: 'text', text: `This photo shows a real room. Paint this same room as a wide, eye-level, photorealistic view, as the person remembers it: ${m}
-Keep the room's real architecture, walls, windows, doors and objects from the photo where they are. Change light, time of day, season, people and objects to match the memory. Camera at standing eye height in the middle of the room, level horizon at the vertical center, wide field of view, the floor visible at the bottom and the ceiling at the top. People may appear but faces should be soft and unidentifiable. No text, no borders, no captions.` },
-    image(photo, 'the photo'),
-  ]);
+  if (m.length < 4) throw fail('Tell me about the room first.', 400);
+  return paint([{ type: 'text', text: `Someone is describing a room they remember, in their own words: "${m}"
+Paint that room as one wide, eye-level, photorealistic photograph, as if they are standing in the middle of it inside the memory. Put every detail they mention in the room: the people, objects, light, time of day, season and era they describe. Fill everything they didn't mention with plain, believable things that fit the time and place. Camera at standing eye height, level horizon at the vertical center, wide field of view, the walls continuing past both edges, the floor visible at the bottom and the ceiling at the top. Warm, real, lived-in, natural light. People may appear but their faces should be soft and unidentifiable. No text, no borders, no captions.` }]);
 }
 
 export async function back({ strip, memory } = {}) {
@@ -76,21 +73,21 @@ Keep the left and right parts exactly as they are, pixel for pixel. Do not repea
   ]);
 }
 
-export async function labels({ photo, scene: sc, memory } = {}) {
+export async function labels({ scene: sc, memory } = {}) {
   const m = str(memory, 1500);
   const j = await call({
     model: 'google/gemini-3.8-flash', reasoning: { effort: 'low' }, response_format: { type: 'json_object' },
     messages: [{ role: 'user', content: [
-      { type: 'text', text: `Image 1 is a real photo of a room. Image 2 is a generated picture of that room after applying this spoken memory: "${m}".
-List up to 12 distinct visible elements in IMAGE 2. For each give: name (2-4 plain words, lowercase), source ("photo" if it clearly appears in image 1, "memory" if the spoken memory asked for it, "invented" if neither), and box_2d [ymin,xmin,ymax,xmax] on a 0-1000 grid of image 2.
+      { type: 'text', text: `This picture was generated from a person's spoken memory of a room: "${m}".
+List up to 12 distinct visible elements in the picture. For each give: name (2-4 plain words, lowercase), source ("memory" ONLY if the person's words asked for it, even loosely; "invented" if the painter added it on its own), and box_2d [ymin,xmin,ymax,xmax] on a 0-1000 grid of the picture. Be strict: anything the words did not mention is "invented".
 Also give: "title": a 2-5 word name for this room (like "Grandma's kitchen"); "narration": one gentle sentence, under 16 words, spoken to the person as they step inside, in second person, using only what the memory says (like "This is your grandmother's kitchen, on a winter afternoon."); "sound_from": the name of the element in your list that would make the room's sound (a radio, a kettle, a window with rain), or "" if none.
 Reply JSON {"title":"","narration":"","sound_from":"","elements":[...]}.` },
-      image(photo, 'the photo'), image(sc, 'the scene'),
+      image(sc, 'the scene'),
     ] }],
   }, 40000);
   let out;
   try { out = JSON.parse(String(j.choices?.[0]?.message?.content ?? '').replace(/^```(json)?|```$/g, '')); } catch { throw fail('The labeler sent back something unreadable.', 502); }
-  const SOURCES = ['photo', 'memory', 'invented'];
+  const SOURCES = ['memory', 'invented'];
   const elements = (Array.isArray(out.elements) ? out.elements : []).slice(0, 14).flatMap(e => {
     const b = Array.isArray(e?.box_2d) ? e.box_2d.map(Number) : [];
     if (b.length !== 4 || b.some(n => !Number.isFinite(n))) return [];
@@ -112,7 +109,10 @@ Ask them ONE short, warm question (under 14 words) about something they did not 
   return { question: str(q, 140) || 'What could you hear in that room?' };
 }
 
-export async function sound({ memory } = {}) {
+export async function sound(args = {}) {
+  try { return await soundOnce(args); } catch { return soundOnce(args); } // Lyria sometimes sends nothing; one retry
+}
+async function soundOnce({ memory } = {}) {
   const m = str(memory, 800);
   if (!m) throw fail('Tell me the memory first.', 400);
   const r = await call({

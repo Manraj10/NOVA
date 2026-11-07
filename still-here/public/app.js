@@ -1,4 +1,4 @@
-// Still Here: photo + memory -> a 360 room you can stand in, every detail labeled by where it came from.
+// Still Here: a few spoken words -> a 360 room you can stand in, every detail labeled as from your words or imagined.
 import { load, shrink, stripInput, edgeScore, makeLoop, equirect } from './pano.js';
 import { depthOf, makeRoom } from './room.js';
 import { micButton, say } from './voice.js';
@@ -21,25 +21,12 @@ async function api(path, body) {
   return j;
 }
 
-// ---------- 1. the photo ----------
-let photo = null; // data URL, shrunk
-$('photo').onchange = async e => {
-  const f = e.target.files?.[0];
-  if (!f) return;
-  const url = URL.createObjectURL(f);
-  try { photo = shrink(await load(url)); } catch { alert('That photo could not be opened. Try a JPEG or PNG.'); return; }
-  finally { URL.revokeObjectURL(url); }
-  $('thumb').src = photo; $('waitimg').src = photo;
-  show('tell');
-  setTimeout(() => $('memory').focus({ preventScroll: true }), 400);
-};
-
 // ---------- 2. the memory ----------
 const memory = $('memory');
-memory.oninput = () => { $('build').disabled = memory.value.trim().length < 8; };
+memory.oninput = () => { $('build').disabled = memory.value.trim().length < 4; };
 micButton($('mic1'), ctx, {
   onText: t => { memory.value = (memory.value.trim() + ' ' + t).trim(); memory.oninput(); },
-  onState: s => { $('note1').textContent = { listening: 'Listening… let go when you’re done.', hearing: 'Writing it down…', denied: 'The microphone is blocked. You can type instead.', idle: 'Hold the circle and speak, or type.' }[s]; },
+  onState: s => { $('note1').textContent = { listening: 'Listening… let go when you’re done.', hearing: 'Writing it down…', denied: 'The microphone is blocked. You can type instead.', idle: memory.value.trim() ? 'Hold again to add more.' : 'Hold to talk, or tap once to start and again to stop.' }[s]; },
 });
 
 // ---------- 3. building, with one question back ----------
@@ -56,10 +43,10 @@ function steps() {
 }
 
 let answerWait;
-$('build').onclick = () => { ctx().resume(); build(photo, memory.value.trim()); };
+$('build').onclick = () => { ctx().resume(); build(memory.value.trim()); };
 
-async function build(photo, mem) {
-  show('wait');
+async function build(mem) {
+  show('wait'); $('waitimg').hidden = true;
   $('enter').hidden = true;
   $('question').textContent = ' '; $('answerbox').hidden = $('send').parentElement.hidden = true;
   const st = steps(), tick = setInterval(() => { $('clock').textContent = `Building your room · ${Math.round((performance.now() - st.t0) / 1000)} s`; }, 250);
@@ -78,12 +65,12 @@ async function build(photo, mem) {
 
   try {
     st.go('scene');
-    const sceneP = api('scene', { photo, memory: mem });
-    const front = await load((await sceneP).image);
+    const front = await load((await api('scene', { memory: mem })).image);
     st.done('scene');
+    $('waitimg').src = front.src; $('waitimg').hidden = false;
     const frontJpg = shrink(front, 1600, 0.88);
     st.go('labels');
-    const labelsP = api('labels', { photo, scene: frontJpg, memory: mem }).then(r => (st.done('labels'), r)).catch(e => (st.bad('labels', 'skipped'), console.warn(e), null));
+    const labelsP = api('labels', { scene: frontJpg, memory: mem }).then(r => (st.done('labels'), r)).catch(e => (st.bad('labels', 'skipped'), console.warn(e), null));
 
     const extra = await Promise.race([answer, new Promise(ok => setTimeout(() => ok(''), 1500))]) || await answer;
     $('answerbox').hidden = $('send').parentElement.hidden = true;
@@ -131,7 +118,7 @@ async function build(photo, mem) {
     clearInterval(tick);
     $('question').textContent = 'Something went wrong.';
     $('clock').textContent = e.message;
-    $('enter').hidden = false; $('enter').textContent = 'Try again'; $('enter').onclick = () => { $('enter').textContent = 'Step inside'; build(photo, mem); };
+    $('enter').hidden = false; $('enter').textContent = 'Try again'; $('enter').onclick = () => { $('enter').textContent = 'Step inside'; build(mem); };
   }
 }
 const sendAnswer = () => {
@@ -220,7 +207,7 @@ function real(on) {
 }
 $('real').onclick = () => real(!shown);
 
-const SRC = { photo: 'This was in your photo.', memory: 'This came from what you remembered.', invented: 'Imagined to fill the room. It wasn’t in your photo or your words.' };
+const SRC = { memory: 'This came from your words.', invented: 'Imagined to fill the room. You didn’t say it.' };
 let sheetTag = null;
 function openSheet(t, b) {
   sheetTag = { t, b };
@@ -238,7 +225,7 @@ $('sheet').onclick = e => {
 };
 $('stage').addEventListener('pointerdown', () => { $('sheet').hidden = true; });
 
-$('leave').onclick = () => { music?.stop(); music = null; view?.tiltOff(); show(room0 ? 'home' : 'tell'); };
+$('leave').onclick = () => { music?.stop(); music = null; view?.tiltOff(); show('home'); };
 $('mute').onclick = () => {
   if (!music) return;
   const on = $('mute').getAttribute('aria-pressed') !== 'true';
