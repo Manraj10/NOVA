@@ -439,12 +439,9 @@ $('start').addEventListener('click', () => start());
 // the "tap anywhere" screen stays as it was.
 async function autoStart() {
   try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: MIC });
-    voice.unlock();
-    await Promise.race([voice.ctx?.resume?.(), sleep(800)]);
-    const ok = voice.ctx?.state === 'running';
-    probe.getTracks().forEach(t => t.stop());
-    if (ok && !running) start(true);
+    const mic = await voice.autoUnlock(MIC);
+    if (!mic) return;
+    try { if (!running) await start(true); } finally { mic.getTracks().forEach(t => t.stop()); } // the camera's own mic is live by now
   } catch { /* no permission yet or no audio without a tap: the start screen handles it */ }
 }
 autoStart();

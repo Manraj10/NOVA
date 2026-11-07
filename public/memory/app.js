@@ -40,7 +40,7 @@ async function api(name, body) {
 const L = {
   greet: 'Memory. Tell me about a room you remember. Just start talking.',
   building: 'Got it. Building your room. It takes about half a minute.',
-  confirm: 'Is that how you remember it? Say Hey Nib, then tell me anything to change.',
+  confirm: 'Is that how you remember it? Tell me anything to change.',
   almost: 'Almost there.',
   added: 'Got it. I’ll add that.',
   glad: 'I’m glad. Look around as long as you like. Say Nib if you want to change anything.',
@@ -59,7 +59,7 @@ const L = {
 voice.prefetch(Object.values(L));
 
 // ---------- ears: open after the first tap, then always on ----------
-let ears = null, micDenied = false;
+let ears = null, micDenied = false, autoMic = null; // autoMic: the live mic that let sound start without a tap
 function startEars() {
   if (ears || micDenied) return;
   voice.unlock();
@@ -68,10 +68,10 @@ function startEars() {
   ears = makeEars({
     ctx: voice.ctx, lang: () => 'en',
     ignore: () => false, // barge-in: listen while Nib talks; Nib's own words are dropped by the echo check
-    onCapture: () => voice.echoSnapshot(),
-    onText: (text, said) => { if (!voice.echo(text, said)) heard(text); },
+    onCapture: () => ({ ...voice.echoSnapshot(), at: performance.now() }), // when the phrase began
+    onText: (text, said) => { if (!voice.echo(text, said)) heard(text, { at: said?.at }); },
   });
-  ears.start().catch(() => {
+  ears.start(autoMic || undefined).catch(() => {
     ears = null; micDenied = true; voice.micOpen = false;
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
     voice.say(L.noMic);
@@ -105,12 +105,11 @@ addEventListener('click', begin, { capture: true }); // click (not pointerdown):
 async function autoStart() {
   if (params.has('bake')) return;
   try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: MIC });
-    voice.unlock();
-    await Promise.race([voice.ctx?.resume?.(), sleep(800)]);
-    const ok = voice.ctx?.state === 'running';
-    probe.getTracks().forEach(t => t.stop());
-    if (ok && !$('start').hidden) begin();
+    const mic = await voice.autoUnlock(MIC);
+    if (!mic) return;
+    if ($('start').hidden) { mic.getTracks().forEach(t => t.stop()); return; }
+    autoMic = mic; // kept live: stopping it would let iPhone silence the sound again
+    begin();
   } catch { /* no permission yet, or no sound without a tap: the start screen handles it */ }
 }
 autoStart();
@@ -123,6 +122,7 @@ function pause() {
   if ($('start').hidden === false) return;
   voice.stop();
   ears?.stop(); ears = null;
+  autoMic?.getTracks().forEach(t => t.stop()); autoMic = null;
   voice.micOpen = false;
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
   if (music) music.gain.gain.value = 0;
@@ -166,7 +166,11 @@ const fixWake = t => t
   .replace(/^\s*(hey|hi|hay|ok|okay)[\s,]+(nib|nibb|nibs|nim|mib|neeb|nibe|nibh|nieb|knib|neb|ned|nid|nip)\b[,.!?]*/i, 'Hey Nib, ')
   .replace(/^Hey Nib,\s*$/, 'Nib');
 
-function heard(text, { typed = false } = {}) {
+// In the room, a sentence that is plainly an edit ("make it darker", "can you add a radio") counts any time,
+// with or without "Hey Nib". Other talk near the phone (the presenter, the judges) never changes the room.
+const EDIT = /^(?:[a-z ]{0,24}\b(?:but|so|and|now|then|just) )?(?:(?:no|ok|okay|yes|yeah|good|nice|great|but|and|so|actually|also|um|uh|hmm|wait|now|then|just)[\s,]+)*(?:make|change|add|put|remove|take|move|turn|paint|replace|swap|fix|show|give|bring|can you|could you|would you|please|i want|id like|i would like|there should|there was|there were|there is|theres|it should|it was|it needs|let it|let there|less|more)\b/;
+function heard(text, { typed = false, at } = {}) {
+  const said = Math.min(at ?? Infinity, performance.now()); // when the phrase began
   text = fixWake(String(text || '').trim());
   if (!text) return;
   const nav = voice.navigation(text);
@@ -177,7 +181,7 @@ function heard(text, { typed = false } = {}) {
     voice.stop();
     if (!wake.rest) { orb = false; return openWindow(); }
     words = wake.rest;
-  } else if (!typed && performance.now() > windowUntil && !collected) {
+  } else if (!typed && said > windowUntil && !collected && !(step === 'room' && EDIT.test(norm(words)))) {
     if (voice.speaking && /^(stop|quiet|be quiet|pause|shh+|hush)$/.test(norm(words))) { voice.stop(); openWindow(); }
     return; // not meant for Nib
   }
@@ -185,7 +189,7 @@ function heard(text, { typed = false } = {}) {
   if (cmd) { collected = ''; closeWindow(); return cmd(); }
   if (typed) return commit(words);
   // in the room, only "Hey Nib", the yellow button or a question from Nib opens the door to a change
-  if (!wake && !collected && performance.now() > freeUntil && step !== 'home') return;
+  if (!wake && !collected && said > freeUntil && step !== 'home' && !(step === 'room' && EDIT.test(norm(words)))) return;
   // speech arrives a phrase at a time: keep collecting until a short silence, then act on all of it
   collected = collected ? `${collected} ${words}` : words;
   windowUntil = freeUntil = performance.now() + 1800;
@@ -445,8 +449,8 @@ function describeAgain() {
   sayLines(sentences(room.describe)).then(done => { if (done && current === room) confirmAndListen(); });
 }
 function confirmAndListen() {
-  openWindow(16000, false, false);
-  voice.say(L.confirm).then(() => { if (step === 'room') openWindow(10000, true, false); }); // commands only: a change needs Hey Nib
+  openWindow(16000, false);
+  voice.say(L.confirm).then(() => { if (step === 'room') openWindow(14000); }); // Nib asked, so the answer counts; later changes need Hey Nib
 }
 
 let muted = false, soundTok = 0;

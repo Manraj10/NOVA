@@ -84,6 +84,21 @@ export const voice = {
     }
   },
 
+  // Opened by voice ("Hey Nib, open Memory") there is no tap on the new page. iPhone lets Web Audio start
+  // without one only while the page is capturing the mic (WebKit: document.isCapturing()), so open the mic
+  // first, start sound while it's live, and hand the live mic on. Resolves to the mic, or null (tap needed).
+  async autoUnlock(constraints) {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+    this.micOpen = true;
+    this.unlock();
+    for (let k = 0; k < 20 && this.ctx?.state !== 'running'; k++) { this.ctx?.resume?.()?.catch?.(() => {}); await new Promise(r => setTimeout(r, 100)); }
+    if (this.ctx?.state === 'running') return mic;
+    mic.getTracks().forEach(t => t.stop());
+    this.micOpen = false;
+    return null;
+  },
+
   unlock() {
     this.keepAwake();
     this.ctx ??= new (window.AudioContext || window.webkitAudioContext)();

@@ -1956,3 +1956,12 @@ setLang(S.lang);
 setMode('start');
 renderLists();
 requestAnimationFrame(loop);
+// Opened by voice ("Hey Nib, open Trace") there is no tap: start like Around me when iPhone allows sound.
+(async () => {
+  if (S.sim || new URLSearchParams(location.search).has('bot')) return;
+  try {
+    const mic = await voice.autoUnlock(MIC);
+    if (!mic) return;
+    try { if (S.mode === 'start') await begin(); } finally { mic.getTracks().forEach(t => t.stop()); }
+  } catch { /* no permission yet: the start screen stays */ }
+})();

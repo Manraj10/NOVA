@@ -132,7 +132,7 @@ export function makeEars({ ctx, ignore, onText, lang, onCapture = () => null,
     chunks.push(copy);
     quietMs = on ? 0 : quietMs + frameMs;
     const ms = chunks.length * frameMs;
-    if (quietMs > 650 || ms > 7000) {
+    if (quietMs > (ms < 1600 ? 450 : 650) || ms > 7000) { // a short "Hey Nib" is sent sooner
       live = false; loud = 0;
       const parts = chunks, captured = capture; chunks = []; capture = null;
       if (ms - quietMs > 250) enqueue(parts, captured); // a cough or a click is not a phrase

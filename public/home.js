@@ -114,6 +114,15 @@ function start() {
   return pending;
 }
 
+// Opened by voice ("Hey Nib, go home") there's no tap: start as soon as iPhone allows sound.
+(async () => {
+  try {
+    const mic = await voice.autoUnlock(MIC);
+    if (!mic) return;
+    try { await start(); } finally { mic.getTracks().forEach(t => t.stop()); }
+  } catch { /* no permission yet: a tap starts Home */ }
+})();
+
 // Plain anchors retain normal VoiceOver and keyboard navigation.
 document.addEventListener('click', event => { if (!event.target.closest('a')) start(); });
 document.addEventListener('keydown', event => {
