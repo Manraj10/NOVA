@@ -19,7 +19,7 @@ const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो
 // Accept recognizer spellings (Mib, Nim, Ned, Nid all happened live) and joined "HeyNib", never an embedded mention or "Nibbles".
 // The name as phones actually transcribe it (all seen live): nib, neb, nip, nim, mib, ned, nid, knib…
 // and run together with "hey": "HeNeB", "Hennip", "Heynib".
-const NAME = '(?:k?n+[iey]+[bp]+[esh]?|n[iey]+d|n[iy]m|m[iy][bdp]|knob)';
+const NAME = '(?:k?n+[iey]+[bp]+[esh]?|n[iey]+d|n[iy]m|m[iey][bdp]|nick|knob)';
 const HEY = '(?:hey|hay|hei|hen|he|hai)';
 // With "Hey" in front, anything may follow. A bare name must be addressed ("Nib." / "Nib, what's this?"),
 // so a presenter saying "Nib reads the form…" in the pitch doesn't trigger it.
@@ -49,6 +49,7 @@ export const voice = {
     const load = () => { this.voices = speechSynthesis.getVoices(); };
     load();
     speechSynthesis.addEventListener?.('voiceschanged', load);
+    document.addEventListener?.('visibilitychange', () => { if (!document.hidden) this.ctx?.resume?.()?.catch?.(() => {}); });
     // Every mode uses the same ears. A later transcription failure must be
     // audible even when that service (or the paid speech service) is down.
     if (!this.hearingFailureListener && window.addEventListener) {
@@ -169,6 +170,7 @@ export const voice = {
   // otherwise the built-in voice says it, so a slow network never leaves the person in silence.
   say(text, { cue = false, soft = false, system = false } = {}) {
     if (!text) return Promise.resolve();
+    if (this.ctx && this.ctx.state !== 'running') this.ctx.resume?.().catch?.(() => {});
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
     if (!cue) this.listeningUi(false); // the reply has started: the listening orb goes away, like Siri
@@ -409,7 +411,7 @@ export const voice = {
     // and after a navigation verb, without rerouting ordinary room answers.
     // "Back" remains a local previous-field/question action.
     const routes = { trace: 'paper', paper: 'paper', peeper: 'paper', 'around me': 'around',
-      'a round me': 'around', around: 'around', memory: 'memory', memories: 'memory', home: 'home', menu: 'home' };
+      'a round me': 'around', 'around you': 'around', around: 'around', memory: 'memory', memories: 'memory', home: 'home', menu: 'home' };
     if (Object.hasOwn(routes, destination)) return routes[destination];
     if (!(modeChoice || explicitMode) || !destination || /[^a-z ]/.test(destination) || destination.split(' ').length > 3) return null;
     const lev = (a, b) => {

@@ -86,7 +86,7 @@ export function makeAround({ hfov = 60 } = {}) {
         const recent = now - crowd.at < 30000 ? crowd.n : 0;
         people = inView.length > recent ? inView.slice(recent) : [];
         before = recent;
-        crowd = { n: Math.max(recent, inView.length), at: now };
+        crowd = { n: Math.max(recent, inView.length), at: inView.length >= recent ? now : crowd.at };
         // keep the world's person count equal to the biggest crowd seen, not the sum of sightings
         let extra = world.filter(w => w.kind === 'person').length - crowd.n;
         for (let k = world.length - 1; k >= 0 && extra > 0; k--) if (world[k].kind === 'person') { world.splice(k, 1); extra--; }
@@ -122,7 +122,7 @@ export function makeAround({ hfov = 60 } = {}) {
       }
       const plural = name => (name === 'stairs' ? 'stairs' : /(x|ch|sh)$/.test(name) ? `${name}es` : `${name}s`);
       const parts = [...groups.entries()].sort(([a], [b]) => (a === 'person' ? -1 : b === 'person' ? 1 : 0)).slice(0, 6).map(([name, g]) => {
-        const label = name === 'person' ? (g.n === 1 ? 'one person' : `${word(g.n)} people`) : g.n === 1 ? `a ${name}` : `${word(g.n)} ${plural(name)}`;
+        const label = name === 'person' ? (g.n === 1 ? 'one person' : `${word(g.n)} people`) : g.n === 1 ? (name === 'stairs' ? 'stairs' : `a ${name}`) : `${word(g.n)} ${plural(name)}`;
         return g.places.size ? `${label} ${[...g.places].join(' and ')}` : label;
       });
       return `Around you: ${parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0]}.`;

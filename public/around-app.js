@@ -61,11 +61,12 @@ function start(auto = false) {
       voice.say(orient === 'denied' ? `${START} The compass is off, so I'll describe only what's in front of you.` : START)
         .then(() => {
           if (owner !== cameraLifecycle) return;
+          if (queue.some(q => q.urgent)) { speakQueue.busy = false; speakQueue(); return; } // a warning came during the greeting
           // Right after the greeting Nib is already listening (chime + orb): ask anything without saying Nib.
           // News waits 8 s for the question; a hazard still cuts in.
           askUntil = performance.now() + 8000;
           voice.earcon(true);
-          holdNews = setTimeout(() => { holdNews = 0; speakQueue.busy = false; speakQueue(); }, 8000);
+          holdNews = setTimeout(() => { holdNews = 0; queue.forEach(q => { q.at = Date.now(); }); speakQueue.busy = false; speakQueue(); }, 8000);
         });
       loop(++gen);
       if (!cameraWatchStarted) { cameraWatchStarted = true; eyesReady.then(() => requestAnimationFrame(watch)); }
@@ -234,7 +235,7 @@ function command(words) {
   else if (/^(start|resume|continue|go on)$/.test(t)) { if (!running) { running = true; voice.say('Going on.'); loop(++gen); } }
   else if (/^(whats|what is) going on|^(describe|what do you see)/.test(t)) tellScene();
   else if (/^(whats|what is) around( me)?$|^who(s| is) (here|around|near)( me)?$/.test(t)) tellAll();
-  else if (/^(help|what can i say)$/.test(t)) voice.say("Say Nib, then ask anything about what's in front of you. Or say what's around me, what's going on, stop, start, or home.");
+  else if (/^(help|what can i say)$/.test(t)) reply("Say Nib, then ask anything about what's in front of you. Or say what's around me, what's going on, stop, start, or home.");
   else return false;
   return true;
 }
@@ -247,11 +248,12 @@ function snap() {
   return c.toDataURL('image/jpeg', 0.72);
 }
 
-async function look() {
+async function look(my) {
   const h = heading;
   if (!video.videoWidth) { await sleep(300); return { say: [], hazard: false }; }
   const r = await fetch('api/around', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), lang: 'en' }), signal: AbortSignal.timeout(9000) });
   const j = await r.json().catch(() => ({}));
+  if (my !== gen || !running) return { say: [], hazard: false };
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   if (j.scene) scene = j.scene;
   whereAmI(j);
@@ -312,6 +314,7 @@ function stairsAlarm(s) {
   const now = Date.now();
   if (now - lastStairs < 12000) return;
   lastStairs = now;
+  if (holdNews) { clearTimeout(holdNews); holdNews = 0; speakQueue.busy = false; } // safety first, like hazards
   queue.length = 0;
   voice.stop();
   [988, 784, 587].forEach((f, k) => setTimeout(() => voice.beep(f, 0.12, 0.2, (s.x - 0.5) * 2), k * 140));
@@ -334,7 +337,7 @@ function news({ say, hazard }) {
     voice.beep(330, 0.22, 0.22);
     queue.push({ text: say.shift(), at: Date.now() + 250, urgent: true });
   }
-  if (asking && !hazard) return; // an answer is playing; only a hazard may cut in
+  if ((asking || talking) && !hazard) return; // an answer is playing; only a hazard may cut in
   for (const text of say) queue.push({ text, at: Date.now() });
   if (say.length || hazard) speakQueue();
   $('count').textContent = countText();
@@ -343,7 +346,7 @@ function news({ say, hazard }) {
 async function loop(my) {
   while (running && my === gen) { // a stop/start never leaves two loops running
     try {
-      const result = await look();
+      const result = await look(my);
       if (my !== gen) return;
       news(result);
     } catch {
@@ -399,7 +402,8 @@ function drawBoxes(items) {
 }
 
 // A question about what's in front of you: a fresh look and a short spoken answer.
-let askUntil = 0, asking = false;
+let askUntil = 0, asking = false, talking = false;
+const reply = text => { talking = true; return voice.say(text).finally(() => { talking = false; }); };
 async function askAbout(question) {
   if (asking || !question.trim()) return;
   asking = true;
@@ -419,13 +423,13 @@ async function askAbout(question) {
 function tellAll() {
   queue.length = 0;
   voice.stop();
-  voice.say(around.summary(heading));
+  reply(around.summary(heading));
 }
 
 function tellScene() {
   queue.length = 0;
   voice.stop();
-  voice.say(scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase())}` : "I'm still looking. Turn slowly.");
+  reply(scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase())}` : "I'm still looking. Turn slowly.");
 }
 
 $('start').addEventListener('click', () => start());
@@ -449,7 +453,7 @@ $('ask').addEventListener('click', e => {
   e.stopPropagation();
   queue.length = 0;
   voice.stop();
-  voice.say(`${scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase()).replace(/\.?$/, '.')} ` : ''}${around.summary(heading)}`);
+  reply(`${scene ? `Right now: ${scene.replace(/^\w/, c => c.toLowerCase()).replace(/\.?$/, '.')} ` : ''}${around.summary(heading)}`);
 });
 $('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
 // A tap after an automatic start also turns the compass on (iPhone only asks for it inside a tap).
