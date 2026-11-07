@@ -66,8 +66,10 @@ async function build(photo, mem) {
   // the question fills the wait; its answer feeds the walls behind you and the sound
   let answered;
   const answer = new Promise(ok => { answered = ok; });
-  answerWait = answered;
+  let replied = false;
+  answerWait = v => { replied = true; answered(v); };
   api('ask', { memory: mem }).then(async ({ question }) => {
+    if (replied) return;
     $('question').textContent = question;
     $('answerbox').hidden = $('send').parentElement.hidden = false;
     say(question, ctx);
@@ -111,6 +113,7 @@ async function build(photo, mem) {
       narration: lab?.narration || '',
       tags: tagsFrom(lab, { L, s, w }),
       soundFrom: null,
+      faceU: (w / 2 - s) / L,
       sound: await soundP,
     };
     room.soundFrom = room.tags.find(t => lab?.sound_from && t.name === lab.sound_from) || null;
@@ -158,6 +161,7 @@ async function enter(room) {
   view?.destroy();
   $('tags').innerHTML = '';
   view = makeRoom($('stage'), room);
+  view.face(room.faceU ?? 0.5);
   $('rtitle').textContent = room.title;
   for (const t of view.tags) {
     const b = document.createElement('button');
@@ -284,7 +288,7 @@ async function bake(room) {
     depth: c ? c.toDataURL('image/png') : null,
     sound: room.sound,
     narrationClip: room.narration ? await fetch('/api/speak', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: room.narration }) }).then(r => r.ok ? r.json() : null) : null,
-    meta: { title: room.title, narration: room.narration, memory: room.memory, tags: room.tags.map(({ name, source, u, vb }) => ({ name, source, u, vb })), soundFromName: room.soundFrom?.name || '' },
+    meta: { title: room.title, narration: room.narration, memory: room.memory, tags: room.tags.map(({ name, source, u, vb }) => ({ name, source, u, vb })), soundFromName: room.soundFrom?.name || '', faceU: room.faceU },
   });
   console.log('baked');
 }

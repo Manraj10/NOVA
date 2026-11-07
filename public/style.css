@@ -125,3 +125,4 @@ em { font-family: var(--serif); font-style: italic; color: var(--amber); }
 @media (hover: hover) and (pointer: fine) { .stick, #tilt { display: none; } .room-bottom { justify-content: center; } }
 @media (hover: none) { .howto { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+.show-real .howto { display: none; }
