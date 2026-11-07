@@ -126,3 +126,8 @@ em { font-family: var(--serif); font-style: italic; color: var(--amber); }
 @media (hover: none) { .howto { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
 .show-real .howto { display: none; }
+
+.home-pan { position: fixed; inset: 0; background: url(hero/pano.jpg) 0 50% / auto 130% repeat-x; opacity: .38; filter: saturate(1.1) sepia(.2); animation: pan 160s linear infinite; mask-image: radial-gradient(85% 70% at 50% 50%, #000 30%, transparent 85%); -webkit-mask-image: radial-gradient(85% 70% at 50% 50%, #000 30%, transparent 85%); }
+.home-pan::after { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(18,13,9,.55), rgba(18,13,9,.2) 40%, rgba(18,13,9,.75)); }
+@keyframes pan { to { background-position-x: -2692px; } }
+.home-inner { position: relative; }

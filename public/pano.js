@@ -55,6 +55,17 @@ export function makeLoop(front, back) {
   };
   fade(front, w - s, b, 0, w - 2 * s);      // end of the front into the start of the back
   fade(b, w - s, front, 0, L - s);          // end of the back into the start of the front (the wrap)
+  // where the painter's fill meets its kept strips there can be a hard line: melt a band across each
+  const melt = at => {
+    const R = Math.round(w * 0.035), t = canvas(6, h), band = canvas(2 * R, h), bx = band.getContext('2d');
+    t.getContext('2d').drawImage(c, at - R, 0, 2 * R, h, 0, 0, 6, h);
+    bx.imageSmoothingQuality = 'high'; bx.drawImage(t, 0, 0, 2 * R, h);
+    const g = bx.createLinearGradient(0, 0, 2 * R, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, 'rgba(0,0,0,.9)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    bx.globalCompositeOperation = 'destination-in'; bx.fillStyle = g; bx.fillRect(0, 0, 2 * R, h);
+    x.drawImage(band, at - R, 0);
+  };
+  melt(w - s); melt(L - s);
   return { loop: c, L, s, w, h };
 }
 
