@@ -6,7 +6,7 @@
 // "what's around me" / "what's going on".
 import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
-import { makeAround, allLines } from './around.js';
+import { makeAround, allLines, placeLine, crowdLine } from './around.js';
 import { makeEyes, LOCAL_NAMES } from './eyes.js';
 
 const $ = id => document.getElementById(id);
@@ -15,6 +15,7 @@ const PHONE = matchMedia('(pointer: coarse)').matches;
 const around = makeAround({ hfov: PHONE ? 50 : 60 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let heading = null, running = false, lastErrorSaid = 0, scene = '', lens = 'main', gen = 0, fov = PHONE ? 50 : 60, eyes = null, seen = [];
+let place = '', placeVote = '', lastStairs = -1e9;
 // Load the on-device detector while the start screen is up (7 MB, cached after the first visit).
 const eyesReady = makeEyes().then(e => (eyes = e)).catch(() => null);
 
@@ -25,7 +26,7 @@ const START = "Around me. Hold your phone at chest height and turn slowly. Say N
 const LOOK = 'Let me look.';
 // Three warm-up queues of four (12 at a time): all 153 lines are ready about 15 s after the page opens.
 const LINES = [START, LOOK, ...allLines()];
-for (let k = 0; k < 3; k++) voice.prefetch(LINES.filter((_, i) => i % 3 === k));
+const warmVoice = () => { for (let k = 0; k < 3; k++) voice.prefetch(LINES.filter((_, i) => i % 3 === k)); }; // after Start, not on every page view
 
 // Compass: iPhone gives webkitCompassHeading after permission; others give absolute alpha.
 function onOrient(e) {
@@ -37,6 +38,7 @@ async function start() {
   if (running) return;
   // Everything that needs the tap happens before the first await.
   voice.unlock();
+  warmVoice();
   const askOrient = window.DeviceOrientationEvent?.requestPermission?.().catch(() => 'denied'); // must start inside the tap
   addEventListener('deviceorientationabsolute', onOrient);
   addEventListener('deviceorientation', onOrient);
@@ -86,6 +88,7 @@ let lastNews = 0;
 function watch(now) {
   if (!running) { requestAnimationFrame(watch); return; }
   const items = eyes?.see(video, now, fov);
+  if (items) proximity(items, now);
   if (items) {
     seen = items;
     drawBoxes(items);
@@ -150,6 +153,9 @@ async function look() {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   if (j.scene) scene = j.scene;
+  whereAmI(j);
+  const stairs = (j.items || []).find(i => (i.name === 'stairs' || i.name === 'step') && i.steps <= 4);
+  if (stairs) stairsAlarm(stairs);
   const extra = (j.items || []).filter(i => !eyes || !LOCAL_NAMES.has(i.name)); // the eyes own people and furniture
   chips(extra);
   return around.update(extra, h);
@@ -166,6 +172,54 @@ async function speakQueue() {
     if (Date.now() - at < (urgent ? 4000 : 10000)) await voice.say(text);
   }
   speakQueue.busy = false;
+}
+
+// ---------- where you are ----------
+// The first look says where you are and how many people are near; after that, only a change of place
+// that two looks in a row agree on ("Now you're in a hallway.").
+function whereAmI(j) {
+  if (!j.place) return;
+  const people = Math.max(around.people(), (j.items || []).filter(i => i.kind === 'person').length, seen.filter(i => i.kind === 'person').length);
+  if (!place) { place = j.place; queue.unshift({ text: placeLine(place, false), at: Date.now() }, { text: crowdLine(people), at: Date.now() }); speakQueue(); return; } // two pre-made lines, both instant
+  if (j.place === place) { placeVote = ''; return; }
+  if (placeVote !== j.place) { placeVote = j.place; return; }
+  place = j.place; placeVote = '';
+  queue.push({ text: placeLine(place, true), at: Date.now() }, { text: crowdLine(people), at: Date.now() });
+  speakQueue();
+}
+
+// ---------- the proximity alarm ----------
+// Something in your path within about two steps: beeps from its side, faster as you get closer, a red
+// edge pulsing on screen, and a buzz where the phone allows. Silent the moment the way is clear.
+let alarmAt = 0;
+function proximity(items, now) {
+  const near = items.filter(i => i.inPath && i.steps <= 2).sort((a, b) => a.steps - b.steps)[0];
+  const edge = document.getElementById('edge');
+  if (!near) { edge?.style.setProperty('--near', '0'); return; }
+  const every = near.steps <= 1 ? 160 : 380;
+  edge?.style.setProperty('--near', near.steps <= 1 ? '1' : '0.55');
+  if (now - alarmAt < every) return;
+  alarmAt = now;
+  voice.beep(near.steps <= 1 ? 1180 : 880, 0.06, voice.speaking ? 0.06 : 0.12, (near.x - 0.5) * 2);
+  navigator.vibrate?.(near.steps <= 1 ? 60 : 30);
+}
+
+// ---------- the stairs alarm ----------
+// Stairs are the one thing that must never be missed: three falling tones, an orange flash, and the
+// warning said first, at most every 12 s.
+function stairsAlarm(s) {
+  const now = Date.now();
+  if (now - lastStairs < 12000) return;
+  lastStairs = now;
+  queue.length = 0;
+  voice.stop();
+  [988, 784, 587].forEach((f, k) => setTimeout(() => voice.beep(f, 0.12, 0.2, (s.x - 0.5) * 2), k * 140));
+  navigator.vibrate?.([80, 60, 80, 60, 160]);
+  const edge = document.getElementById('edge');
+  edge?.classList.add('stairs');
+  setTimeout(() => edge?.classList.remove('stairs'), 1600);
+  queue.push({ text: `Watch out: ${s.name}, about ${['one', 'two', 'three', 'four'][Math.max(1, Math.min(4, s.steps)) - 1]} step${s.steps === 1 ? '' : 's'} ahead.`.replace('four steps', 'four steps'), at: now + 450, urgent: true });
+  setTimeout(speakQueue, 450);
 }
 
 // One place where news becomes speech, for both the eyes and the cloud.
@@ -193,7 +247,9 @@ async function loop(my) {
       if (Date.now() - lastErrorSaid > 20000) { lastErrorSaid = Date.now(); voice.say("I can't reach my eyes right now. Check the internet. I'll keep trying."); }
       await sleep(2000);
     }
-    await sleep(eyes ? 900 : 150); // with the eyes on, the cloud only adds doors, stairs and the scene
+    // The phone's own eyes do the live work; the cloud only adds where you are, doors, stairs and the scene.
+    // ponytail: every 5 s to save API credit; faster costs more and adds little.
+    await sleep(eyes ? 5000 : 2500);
   }
 }
 

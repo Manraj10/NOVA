@@ -7,12 +7,12 @@ import { makeAround, allLines } from '../public/around.js';
 test('turning around: chair warning, then one person, then two more, and turning back is quiet', () => {
   const a = makeAround({ hfov: 60 });
   let t = 0;
-  const r1 = a.update([{ kind: 'furniture', name: 'chair', label: 'wooden chair', x: 0.5, steps: 3, inPath: true }], 0, t += 3000);
-  assert.deepEqual(r1.say, ['Watch out: chair, about three steps ahead.']);
+  const r1 = a.update([{ kind: 'furniture', name: 'chair', label: 'wooden chair', x: 0.5, steps: 2, inPath: true }], 0, t += 9000);
+  assert.deepEqual(r1.say, ['Watch out: chair, about two steps ahead.']);
   assert.equal(r1.hazard, true);
-  const r2 = a.update([{ kind: 'person', name: 'person', label: 'man sitting', x: 0.8, steps: 4, inPath: false }], 60, t += 3000);
+  const r2 = a.update([{ kind: 'person', name: 'person', label: 'man sitting', x: 0.8, steps: 4, inPath: false }], 60, t += 9000);
   assert.deepEqual(r2.say, ['One person on your right.']);
-  const r3 = a.update([{ kind: 'person', name: 'person', label: 'woman standing', x: 0.45, steps: 3, inPath: false }, { kind: 'person', name: 'person', label: 'man standing', x: 0.55, steps: 3, inPath: false }], 160, t += 3000);
+  const r3 = a.update([{ kind: 'person', name: 'person', label: 'woman standing', x: 0.45, steps: 3, inPath: false }, { kind: 'person', name: 'person', label: 'man standing', x: 0.55, steps: 3, inPath: false }], 160, t += 9000);
   assert.deepEqual(r3.say, ['Two more people ahead.']);
   const r4 = a.update([{ kind: 'person', name: 'person', label: 'man sitting', x: 0.8, steps: 4, inPath: false }], 62, t += 3000);
   assert.deepEqual(r4.say, []);

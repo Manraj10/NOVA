@@ -7,6 +7,7 @@
 // people are not counted twice while the phone sweeps (only a bigger crowd is news).
 // ponytail: English only; Paper mode carries the 4 languages.
 
+export const PLACES = ['classroom', 'lecture hall', 'meeting room', 'office', 'hallway', 'lobby', 'kitchen', 'living room', 'bedroom', 'bathroom', 'dining room', 'cafeteria', 'restaurant', 'store', 'library', 'stairwell', 'elevator', 'outdoors', 'street', 'parking lot', 'room'];
 export const NAMES = ['person', 'chair', 'table', 'desk', 'couch', 'bed', 'door', 'stairs', 'step', 'wall', 'bag', 'box', 'cart', 'shelf', 'counter', 'plant', 'trash can', 'bench', 'pole', 'thing'];
 const BUCKET = { person: 14, door: 30, stairs: 30, obstacle: 22, furniture: 22 }; // same thing within ± degrees
 const WORD = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -24,12 +25,17 @@ const peopleLine = (n, where, more) => (more
   ? (n === 1 ? `Another person ${where}.` : `${cap(word(n))} more people ${where}.`)
   : `${cap(word(n))} ${n === 1 ? 'person' : 'people'} ${where}.`);
 const thingLine = (name, where) => `${cap(name)} ${where}.`;
+const art = p => (p === 'outdoors' ? '' : /^[aeiou]/.test(p) ? 'an ' : 'a ');
+export const placeLine = (place, moved) => (place === 'outdoors' ? (moved ? "Now you're outdoors." : "You're outdoors.") : `${moved ? "Now you're in" : "You're in"} ${art(place)}${place}.`);
+export const crowdLine = n => (n === 0 ? 'No one near you.' : n === 1 ? 'One person near you.' : `About ${word(Math.min(n, 10))} people near you.`);
 
 export function allLines() {
   const out = [];
   for (const n of NAMES) for (let s = 1; s <= 3; s++) out.push(hazardLine(n, s));
   for (let n = 1; n <= 6; n++) for (const w of SIDES) out.push(peopleLine(n, w, false), peopleLine(n, w, true));
-  for (const n of NAMES) if (n !== 'person') for (const w of SIDES) out.push(thingLine(n, w));
+  for (const n of ['door', 'stairs', 'step']) for (const w of SIDES) out.push(thingLine(n, w));
+  for (const p of PLACES) out.push(placeLine(p, false), placeLine(p, true));
+  for (let n = 0; n <= 10; n++) out.push(crowdLine(n));
   return out;
 }
 
@@ -38,6 +44,7 @@ export function makeAround({ hfov = 60 } = {}) {
   const world = []; // { kind, name, label, bearing|null, x, steps, at }
   const warned = new Map(); // name -> time of the last in-path warning
   let crowd = { n: 0, at: 0 }; // no compass: the most people seen in one frame lately
+  let peopleAt = -1e9, pendingPeople = 0, pendingX = 0; // people news is grouped: at most one line every 8 s
 
   const bearingOf = (heading, x) => (heading == null ? null : angle(heading + (x - 0.5) * fov));
   const known = (kind, name, bearing, x, now, seen) => seen.find(w => w.kind === kind && w.name === name && (bearing != null && w.bearing != null
@@ -53,13 +60,14 @@ export function makeAround({ hfov = 60 } = {}) {
       const say = [];
       let hazard = false;
       // 1. The nearest thing in the path, within 3 steps: always first, at most every 10 s per kind of thing.
-      const danger = items.filter(i => i.inPath && i.steps <= 3).sort((a, b) => a.steps - b.steps)[0];
+      // Calm: only what's really in the way (within about two steps), and never nagging about the same thing.
+      const danger = items.filter(i => i.inPath && i.steps <= 2).sort((a, b) => a.steps - b.steps)[0];
       if (danger) {
         const n = nameOf(danger);
-        if (!warned.has(n) || now - warned.get(n) > 10000) {
+        if (!warned.has(n) || now - warned.get(n) > 15000) {
           warned.set(n, now);
           hazard = true;
-          say.push(hazardLine(n, Math.max(1, Math.min(3, danger.steps))));
+          say.push(hazardLine(n, Math.max(1, Math.min(2, danger.steps))));
         }
       }
       // 2. Match against earlier frames only: two people side by side are two people.
@@ -83,17 +91,20 @@ export function makeAround({ hfov = 60 } = {}) {
         let extra = world.filter(w => w.kind === 'person').length - crowd.n;
         for (let k = world.length - 1; k >= 0 && extra > 0; k--) if (world[k].kind === 'person') { world.splice(k, 1); extra--; }
       } else before = world.filter(w => w.kind === 'person').length - people.length;
-      if (people.length) {
-        const n = Math.min(6, people.length);
-        say.push(peopleLine(n, side(people.reduce((a, p) => a + p.x, 0) / people.length), before > 0));
+      if (people.length) { pendingPeople += people.length; pendingX = people.reduce((a, p) => a + p.x, 0) / people.length; }
+      if (pendingPeople && now - peopleAt >= 8000) {
+        say.push(peopleLine(Math.min(6, pendingPeople), side(pendingX), before + people.length - pendingPeople > 0));
+        pendingPeople = 0;
+        peopleAt = now;
       }
-      // 4. New doors and stairs always; then at most one other new thing per look.
-      const things = fresh.filter(w => w.kind !== 'person' && !(hazard && w.name === nameOf(danger)));
-      const key = w => (w.kind === 'stairs' || w.kind === 'door' ? 0 : 1);
-      things.sort((a, b) => key(a) - key(b) || a.steps - b.steps);
-      for (const w of things.filter(w => key(w) === 0).concat(things.filter(w => key(w) === 1).slice(0, 1))) say.push(thingLine(w.name, side(w.x)));
+      // 4. Only doors, stairs and steps: they matter for getting around. Chairs and desks that aren't in
+      //    the way are kept for "what's around me", not spoken one by one.
+      for (const w of fresh.filter(w => ['door', 'stairs', 'step'].includes(w.name))) say.push(thingLine(w.name, side(w.x)));
       return { say, hazard };
     },
+
+    // People seen in the last 25 s (the world list forgets older sightings).
+    people() { return world.filter(w => w.kind === 'person').length; },
 
     // "What's around me?": everything seen so far, placed relative to where the person faces now.
     summary(heading) {

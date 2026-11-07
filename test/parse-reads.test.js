@@ -16,7 +16,7 @@ await new Promise(r => server.listen(0, r));
 process.env.NIB_OPENROUTER_BASE = `http://127.0.0.1:${server.address().port}`;
 process.env.OPENROUTER_KEY = 'test';
 process.env.OPENROUTER_MODEL = 'only-model';
-delete process.env.NIB_PARSE_READS;
+process.env.NIB_PARSE_READS = '2'; // the two-read mode (off by default to save credit)
 const { parseForm } = await import('../lib/ai.js');
 const image = 'data:image/jpeg;base64,AAAA';
 
