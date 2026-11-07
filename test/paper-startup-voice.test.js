@@ -96,7 +96,8 @@ test('retry retires audio fallback before starting one combined camera capture',
 });
 
 test('repeated Start during pending permission opens only one camera capture', async t => {
-  const f = fixture(t, { deferCamera: true }); const first = f.context.begin(); await f.context.begin();
+  const f = fixture(t, { deferCamera: true }); const first = f.context.begin(), second = f.context.begin();
+  assert.equal(first, second);
   assert.equal(f.media.length, 1); f.pending[0].resolve(); await first; await flush(); assert.equal(f.maxAudio(), 1);
 });
 
