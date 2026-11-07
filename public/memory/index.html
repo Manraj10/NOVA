@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Nib · Memory</title>
+<meta name="description" content="Tell Nib about a room you remember and it builds it all the way around you, with what you said marked apart from what was imagined.">
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main id="home" class="screen on">
+  <div class="home-pan" aria-hidden="true"></div>
+  <header class="top glass">
+    <a class="back" href="../" aria-label="Home">‹ Home</a>
+    <strong>Memory</strong>
+    <span aria-hidden="true"></span>
+  </header>
+  <div class="home-inner">
+    <h1>Step back into a room you remember.</h1>
+    <p class="lede">Tell me about it in a few words. I’ll ask a question or two, then build it all the way around you, and tell you what’s where.</p>
+    <button class="mic big" id="mic1" aria-label="Talk. Hold, or tap to start and tap again to stop."><span></span></button>
+    <p class="note" id="note1" aria-live="polite">Hold to talk, or tap to start and again to stop.</p>
+    <form class="field glass" id="typeForm">
+      <input id="memory" type="text" autocomplete="off" placeholder="Or type it: my grandmother’s kitchen, a winter evening…" aria-label="Or type your memory">
+      <button class="go" id="build" aria-label="Continue" disabled>→</button>
+    </form>
+    <button class="ghost" id="example">Try the example</button>
+    <p class="fine">An imagined room built from your words, not a scan.</p>
+  </div>
+</main>
+
+<main id="talk" class="screen">
+  <header class="top glass">
+    <button class="back" id="talkBack" aria-label="Start over">‹</button>
+    <strong>Memory</strong>
+    <span class="count" id="clock" aria-hidden="true"></span>
+  </header>
+  <div class="bg"><img id="waitimg" alt="" hidden></div>
+  <ol class="chat" id="chat" aria-live="polite"></ol>
+  <section class="sheet glass" id="answerSheet" hidden>
+    <p class="caption" id="question"></p>
+    <div class="answer-row">
+      <button class="mic" id="mic2" aria-label="Answer. Hold, or tap to start and tap again to stop."><span></span></button>
+      <form class="field" id="answerForm"><input id="answer" type="text" autocomplete="off" placeholder="Or type your answer" aria-label="Type your answer"></form>
+    </div>
+    <button class="ghost small" id="skip">Skip</button>
+  </section>
+</main>
+
+<main id="room" class="screen">
+  <div id="stage"></div>
+  <div id="tags"></div>
+  <header class="top glass">
+    <button class="back" id="leave" aria-label="Leave the room">‹</button>
+    <strong id="rtitle">Your room</strong>
+    <button class="back" id="mute" aria-label="Sound" aria-pressed="false">♪</button>
+  </header>
+  <div class="legend" id="legend" hidden aria-hidden="true">
+    <span class="k memory">From your words</span><span class="k invented">Imagined by Nib</span>
+  </div>
+  <section class="sheet glass room-sheet">
+    <p class="caption small" id="caption" aria-live="polite"></p>
+    <div class="room-row">
+      <div class="stick" id="stick" aria-hidden="true"><span></span></div>
+      <button class="mic" id="mic3" aria-label="Change something. Hold, or tap to start and tap again to stop."><span></span></button>
+      <button class="pill" id="real" aria-pressed="false">Show what’s real</button>
+      <button class="back round" id="tilt" aria-label="Look around by moving your phone" aria-pressed="false">⟳</button>
+    </div>
+    <p class="howto" id="howto">Drag to look around · W A S D to walk · hold the yellow button to change something</p>
+  </section>
+  <div class="tagsheet glass" id="tagsheet" hidden>
+    <p class="sheet-title" id="tagTitle"></p>
+    <p class="sheet-src" id="tagSrc"></p>
+    <div class="row"><button class="pill" data-act="keep">Keep it</button><button class="pill" data-act="remove">Remove it</button><button class="pill" data-act="wrong">That’s wrong</button></div>
+  </div>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
