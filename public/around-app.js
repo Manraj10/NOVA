@@ -21,9 +21,10 @@ const eyesReady = makeEyes().then(e => (eyes = e)).catch(() => null);
 voice.init();
 voice.onCaption = text => { $('caption').textContent = text; $('caption').classList.toggle('warn', /^Watch out/.test(text)); };
 // Make every news line in the natural voice now, before the first look: speech is then instant.
-const START = "Around me. Hold your phone at chest height and turn slowly. Say stop, or home, any time.";
+const START = "Around me. Hold your phone at chest height and turn slowly. Say Nib, then ask me anything. Or say stop, or home.";
+const LOOK = 'Let me look.';
 // Three warm-up queues of four (12 at a time): all 153 lines are ready about 15 s after the page opens.
-const LINES = [START, ...allLines()];
+const LINES = [START, LOOK, ...allLines()];
 for (let k = 0; k < 3; k++) voice.prefetch(LINES.filter((_, i) => i % 3 === k));
 
 // Compass: iPhone gives webkitCompassHeading after permission; others give absolute alpha.
@@ -103,6 +104,11 @@ async function startEars(mic) {
       onCapture: () => voice.echoSnapshot(), // what Nib was saying when this phrase began
       onText: (text, said) => {
         if (voice.echo(text, said)) return; // Nib hearing itself through the speaker
+        // "Nib" opens an 8 s window for a question; "Hey Nib, where's the door?" asks at once.
+        if (askUntil > performance.now()) { askUntil = 0; return askAbout(text); }
+        const wake = voice.wake(text);
+        if (wake && wake.rest && !voice.navigation(text) && !/^(stop|pause|start|resume|home)$/i.test(wake.rest.trim())) return askAbout(wake.rest);
+        if (wake && !wake.rest) { askUntil = performance.now() + 8000; queue.length = 0; voice.stop(); voice.earcon(true); return; }
         // Whole short phrases only, so news like "two people ahead" or a stray word never acts.
         const t = text.toLowerCase().replace(/[.,!?"']/g, '').replace(/^(hey |ok |okay )?nib,? /, '').trim();
         const go = (line, url) => voice.say(line).then(() => { location.href = url; });
@@ -160,6 +166,7 @@ function news({ say, hazard }) {
     voice.beep(330, 0.22, 0.22);
     queue.push({ text: say.shift(), at: Date.now() + 250, urgent: true });
   }
+  if (asking && !hazard) return; // an answer is playing; only a hazard may cut in
   for (const text of say) queue.push({ text, at: Date.now() });
   if (say.length || hazard) speakQueue();
   $('count').textContent = countText();
@@ -221,6 +228,24 @@ function drawBoxes(items) {
   }
 }
 
+// A question about what's in front of you: a fresh look and a short spoken answer.
+let askUntil = 0, asking = false;
+async function askAbout(question) {
+  if (asking || !question.trim()) return;
+  asking = true;
+  queue.length = 0;
+  voice.stop();
+  voice.earcon(false);
+  const looking = voice.say(LOOK);
+  try {
+    const r = await fetch('api/around-ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: snap(), question, lang: 'en' }), signal: AbortSignal.timeout(12000) });
+    const j = await r.json().catch(() => ({}));
+    await looking;
+    await voice.say(r.ok && j.say ? j.say : "I couldn't look just now. Ask me again.");
+  } catch { await looking; await voice.say("I couldn't look just now. Ask me again."); }
+  asking = false;
+}
+
 function tellAll() {
   queue.length = 0;
   voice.stop();
@@ -243,4 +268,4 @@ $('ask').addEventListener('click', e => {
 });
 $('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
 video.addEventListener('click', tellAll);
-window.nibAround = { around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
+window.nibAround = { ask: askAbout, around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
