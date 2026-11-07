@@ -3,6 +3,7 @@
 import http from 'node:http';
 import assert from 'node:assert/strict';
 
+process.env.NIB_PARSE_READS = "1"; // these checks count requests one read at a time (two-read logic: test/parse-reads.test.js)
 const seen = [];
 const PARSE = { title: 'Clinic form', fields: [{ label: 'Full name', kind: 'text', box_2d: [180, 330, 220, 920], say: 'Write your full name.', hint: '' }, { label: 'Bad', kind: 'weird', box_2d: [1, 2], say: '', hint: '' }] };
 const READ = { text: 'Alex Kim', legible: true, spoken: 'You wrote Alex Kim.' };
@@ -160,7 +161,7 @@ assert.equal(ai.provider(), 'nvidia');
 seen.length = 0;
 assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
 assert.equal(seen[0].body.response_format, undefined);
-assert.equal(seen[0].body.max_tokens, 4096);
+assert.equal(seen[0].body.max_tokens, 8192);
 assert.ok(seen[0].body.messages[0].content[0].text.includes('JSON Schema'));
 console.log('ok  nvidia: plain JSON request, mocked base');
 
