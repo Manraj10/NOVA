@@ -72,3 +72,8 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: con
 #edge.stairs { box-shadow: inset 0 0 120px 30px rgba(255, 159, 10, .95); }
 @keyframes edgepulse { from { opacity: .65; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #edge { animation: none; } }
+
+/* Lens confirmation shares the existing right-hand status column. */
+.camera-status { display: grid; justify-items: end; gap: 4px; min-width: 0; }
+.lens-status { max-width: 150px; padding: 3px 8px; border: 1px solid var(--hair); border-radius: 999px; color: var(--tint); font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+.lens-status[hidden] { display: none; }

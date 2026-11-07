@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="around.css">
+<link rel="stylesheet" href="theme.css">
 </head>
 <body>
 <a class="skip-link" href="#app">Skip to Around me</a>
@@ -21,7 +22,7 @@
   <header class="top glass">
     <a class="back" href="./" aria-label="Nib home"><img src="icon.svg" alt="" width="32" height="32"><span class="brand-name">Nib</span><span class="home-label">Home</span></a>
     <h1 class="mode-title">Around me</h1>
-    <span id="count" class="count">Nothing yet</span>
+    <div class="camera-status"><span id="count" class="count">Nothing yet</span><span id="cameraLens" class="lens-status" role="status" aria-live="polite" hidden></span></div>
   </header>
   <section id="aroundControls" inert class="sheet glass" aria-label="Spoken observations">
     <p id="caption" class="caption" aria-live="off" aria-atomic="true">Stay in one place. Turn slowly to hear what is nearby.</p>
