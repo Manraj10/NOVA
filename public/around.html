@@ -5,34 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <title>Nib · Around me</title>
-<link rel="icon" href="icon.svg">
+<meta name="description" content="Stay in one place and turn slowly. Hear the people and things Nib notices nearby.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="around.css">
 </head>
 <body>
-<main id="app" aria-live="off">
+<a class="skip-link" href="#app">Skip to Around me</a>
+<main id="app" aria-label="Around me" aria-live="off" tabindex="-1">
   <video id="video" playsinline muted autoplay aria-hidden="true"></video>
   <canvas id="boxes" aria-hidden="true"></canvas>
   <div id="chips" aria-hidden="true"></div>
-
   <header class="top glass">
-    <a class="back" href="./" aria-label="Back to Nib home">Home</a>
-    <strong>Around me</strong>
+    <a class="back" href="./" aria-label="Nib home"><img src="icon.svg" alt="" width="32" height="32"><span class="brand-name">Nib</span><span class="home-label">Home</span></a>
+    <h1 class="mode-title">Around me</h1>
     <span id="count" class="count">Nothing yet</span>
   </header>
-
-  <section class="sheet glass">
-    <p id="caption" class="caption" aria-live="polite">Turn slowly. I'll tell you who and what is around you.</p>
-    <button id="ask" class="primary" type="button">What's around me?</button>
+  <section id="aroundControls" class="sheet glass" aria-label="Spoken observations">
+    <p id="caption" class="caption" aria-live="off" aria-atomic="true">Stay in one place. Turn slowly to hear what is nearby.</p>
+    <button id="ask" class="primary" type="button" aria-label="Hear a summary of the latest camera view">What’s around me?</button>
   </section>
-
-  <section id="start" class="start">
-    <img class="icon" src="icon.svg" alt="" width="72" height="72">
-    <h1>Around me</h1>
-    <p>Hold your phone at chest height and turn slowly. I'll tell you who is around you, what is in your way, and where the doors are.</p>
-    <button id="go" class="cta" type="button">Tap anywhere to start</button>
-    <p class="fine">Say "what's around me" any time, or tap the screen. Nib never says who a person is.</p>
+  <section id="start" class="start" aria-labelledby="aroundHeading">
+    <p class="eyebrow">02 / Around me</p>
+    <h2 id="aroundHeading" class="hero-title">Hear what’s<br>around you.</h2>
+    <p class="intro">Stay in one place. Hold your phone at chest height and turn slowly. Nib describes the people and things it notices.</p>
+    <button id="go" class="cta" type="button" aria-label="Start Around me camera descriptions">Start Around me</button>
+    <p class="fine">Say “what’s around me” or tap the screen to hear a summary. Distance estimates are approximate.</p>
   </section>
 </main>
 <script type="module" src="around-app.js"></script>

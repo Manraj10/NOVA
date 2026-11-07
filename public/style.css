@@ -563,3 +563,39 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 a.brand { min-height: 44px; color: inherit; text-decoration: none; border-radius: 12px; }
 a.brand:focus-visible { outline: 3px solid var(--tint); outline-offset: 3px; }
 .around-link { display: inline-grid; place-items: center; min-height: 48px; padding: 0 22px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: var(--label, #fff); }
+
+/* Shared Nib chrome. The camera stage, view, video, canvas and fitting rules above stay unchanged. */
+.skip-link { position: fixed; left: 16px; top: 12px; z-index: 100; padding: 18px 24px; border-radius: 14px; background: var(--tint); color: #000; font-weight: 700; transform: translateY(-160%); }
+.skip-link:focus { transform: none; }
+.glass { background: rgba(18, 18, 18, .88); border-color: #38383b; box-shadow: none; }
+.ambient { background: #000; }
+.ambient::after { background: rgba(0, 0, 0, .4); }
+.start { background: #000; }
+.demo-glow { display: none; }
+.view::after { background: var(--tint); filter: blur(4px); animation: none; }
+.brand, .start-home { min-height: 64px; color: var(--label); text-decoration: none; }
+.home-label { padding-left: 10px; border-left: 1px solid #38383b; color: var(--label-2); font-size: 14px; font-weight: 500; }
+.start-nav { position: absolute; z-index: 2; top: max(16px, env(safe-area-inset-top)); left: max(24px, 6vw); right: max(24px, 6vw); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--label-2); font-size: 14px; }
+.start-home { display: inline-flex; align-items: center; gap: 10px; padding-right: 10px; border-radius: 12px; }
+.start-home img { border-radius: 10px; }
+.mode-eyebrow { margin: 0; color: var(--tint); font-size: 13px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.start-body { gap: 16px; }
+.start-body .lede { max-width: 38ch; }
+.paper-mode-links { display: flex; gap: 10px; width: 100%; pointer-events: auto; }
+.paper-mode-links .mode-link { flex: 1; min-height: 64px; font-size: 16px; text-align: center; }
+.mode-link { display: inline-flex; align-items: center; min-height: 64px; }
+.langs button, .cam select, .rb-redo { min-height: 64px; }
+.start-body .langs button { min-height: 64px; }
+@media (max-width: 720px) {
+  .bar .wordmark { display: none; }
+  .bar .home-label { padding: 0; border: 0; color: var(--label); }
+  .start { padding-top: max(104px, calc(env(safe-area-inset-top) + 96px)); place-items: start; }
+  .start-nav { left: 20px; right: 20px; }
+  .start-body { gap: 13px; }
+  .mode-eyebrow { font-size: 12px; }
+  .start-body .hero { font-size: clamp(39px, 10.8vw, 52px); }
+  .paper-mode-links .mode-link { font-size: 15px; }
+}
+@media (min-width: 721px) and (max-height: 600px) {
+  .start { padding-top: 108px; }
+}

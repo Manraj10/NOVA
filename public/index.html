@@ -1,48 +1,49 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-memory-ready="true">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<title>Nib</title>
-<meta name="description" content="Nib is a screen reader for the physical world: paper forms, the people and things around you, and the places you remember.">
+<title>Nib · Home</title>
+<meta name="description" content="Read a paper form, hear what is nearby, or create an imagined place from memory. Three ways to use Nib.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="home.css">
 </head>
 <body>
+<a class="skip-link" href="#modeChoices">Skip to modes</a>
+<header class="site-header">
+  <a class="brand-home" href="./" aria-label="Nib home" aria-current="page"><img src="icon.svg" alt="" width="34" height="34"><span class="brand-name">Nib</span><span class="home-label">Home</span></a>
+  <button id="homeHelp" class="quiet-button" type="button" aria-label="Hear help for choosing a Nib mode">Help</button>
+</header>
 <main id="home" aria-labelledby="title">
-  <header class="hero">
-    <img class="icon" src="icon.svg" alt="" width="64" height="64">
-    <h1 id="title">Nib</h1>
-    <p class="tag">A screen reader for the physical world.</p>
-    <button id="listen" class="cta" type="button">Tap anywhere to talk to Nib</button>
-  </header>
-
-  <nav class="cards" aria-label="Modes">
-    <a class="card glass" href="paper.html">
-      <svg class="glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M13 6h16l8 8v28H13z"/><path d="M29 6v8h8M19 23h12M19 30h12M19 37h7"/></svg>
-      <h2>Paper</h2>
-      <p>Fill in a paper form. Nib finds every blank, guides your finger, and reads your writing back.</p>
-      <span class="say">Say “Paper”</span>
+  <section class="hero" aria-labelledby="title">
+    <div class="hero-copy">
+      <h1 id="title">Your world.<br>Out loud.</h1>
+      <p class="tag">Read a form. Hear what’s nearby.<br>Recreate a place from memory.</p>
+    </div>
+    <button id="listen" class="cta" type="button" aria-label="Choose a mode by voice. Tap to hear the menu.">Tap to choose by voice</button>
+  </section>
+  <nav id="modeChoices" class="cards" aria-label="Choose a mode" tabindex="-1">
+    <a class="card" href="paper.html" aria-labelledby="paperName" aria-describedby="paperDescription">
+      <div class="card-mark" aria-hidden="true"><span class="mode-number">01</span><svg class="glyph" viewBox="0 0 48 48"><path d="M13 6h16l8 8v28H13z"/><path d="M29 6v8h8M19 23h12M19 30h12M19 37h7"/></svg></div>
+      <div class="card-copy"><h2 id="paperName">Paper</h2><p id="paperDescription">Read a form. Write with guidance.</p><span class="say">Say “Paper”</span></div>
+      <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
     </a>
-    <a class="card glass" href="around.html">
-      <svg class="glyph" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="4"/><path d="M14 14a14 14 0 0 0 0 20M34 14a14 14 0 0 1 0 20M8 8a22 22 0 0 0 0 32M40 8a22 22 0 0 1 0 32"/></svg>
-      <h2>Around me</h2>
-      <p>Hear who and what is around you as you turn.</p>
-      <span class="say">Say “Around me”</span>
+    <a class="card" href="around.html" aria-labelledby="aroundName" aria-describedby="aroundDescription">
+      <div class="card-mark" aria-hidden="true"><span class="mode-number">02</span><svg class="glyph" viewBox="0 0 48 48"><circle cx="24" cy="24" r="4"/><path d="M14 14a14 14 0 0 0 0 20M34 14a14 14 0 0 1 0 20M8 8a22 22 0 0 0 0 32M40 8a22 22 0 0 1 0 32"/></svg></div>
+      <div class="card-copy"><h2 id="aroundName">Around me</h2><p id="aroundDescription">Hear the people and things nearby.</p><span class="say">Say “Around me”</span></div>
+      <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
     </a>
-    <a class="card glass" href="memory.html">
-      <svg class="glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M6 22 24 8l18 14M11 18v22h26V18"/><path d="M20 40V29h8v11"/></svg>
-      <h2>Memory</h2>
-      <p>Speak a place you remember. Nib builds it as a room your family can step into.</p>
-      <span class="say">Say “Memory”</span>
+    <a class="card" href="memory.html" aria-labelledby="memoryName" aria-describedby="memoryDescription">
+      <div class="card-mark" aria-hidden="true"><span class="mode-number">03</span><svg class="glyph" viewBox="0 0 48 48"><path d="M6 22 24 8l18 14M11 18v22h26V18"/><path d="M20 40V29h8v11"/></svg></div>
+      <div class="card-copy"><h2 id="memoryName">Memory</h2><p id="memoryDescription">Turn your words into a 360° room.</p><span class="say">Say “Memory”</span></div>
+      <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
     </a>
   </nav>
-
-  <p class="fine">Paper and Around me work today. Memory is not built yet. On a keyboard, press 1, 2 or 3.</p>
-  <p id="live" class="sr" aria-live="polite"></p>
+  <p class="fine">Three ways to explore, understand, and share your world.<br>Keyboard: 1 for Paper, 2 for Around me, 3 for Memory.</p>
+  <p id="live" class="voice-status" role="status" aria-live="off" aria-atomic="true"></p>
 </main>
 <script type="module" src="home.js"></script>
 </body>
