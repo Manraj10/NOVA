@@ -3,6 +3,22 @@
   "buildCommand": "",
   "installCommand": "",
   "outputDirectory": "public",
-  "rewrites": [{ "source": "/api/:path*", "destination": "/api/index" }],
-  "functions": { "api/index.js": { "maxDuration": 60 } }
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index"
+    }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  },
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/memory/",
+      "permanent": false
+    }
+  ]
 }
