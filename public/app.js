@@ -440,25 +440,42 @@ function source() {
 // to the widest lens where Safari allows it. The mic comes in the same capture as the camera: on
 // iPhone a second, separate capture can silence the first.
 const PHONE = matchMedia('(pointer: coarse)').matches;
-async function startCamera() {
+async function startCamera(isCurrent = () => true, onCleanup = () => {}) {
   const id = $('camera').value;
-  // A phone held upright over the page wants a tall 3:4 picture; a landscape one gets letterboxed small.
   const tall = PHONE && innerHeight > innerWidth;
   const size = !PHONE ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
     : tall ? { width: { ideal: 1440 }, height: { ideal: 1920 }, aspectRatio: { ideal: 3 / 4 } } : { width: { ideal: 1920 }, height: { ideal: 1440 }, aspectRatio: { ideal: 4 / 3 } };
   const video_ = id ? { deviceId: { exact: id }, ...size } : { facingMode: { ideal: 'environment' }, ...size };
-  let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ video: video_, audio: MIC }); }
-  catch (e) { if (e?.name === 'NotFoundError' || e?.name === 'NotAllowedError') stream = await navigator.mediaDevices.getUserMedia({ video: video_ }); else throw e; }
-  S.mic = stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null;
-  video.srcObject = new MediaStream(stream.getVideoTracks());
-  const track = stream.getVideoTracks()[0];
+  let stream, mic, picture, released = false;
+  const release = () => {
+    if (!stream || released) return;
+    released = true;
+    stream.getTracks().forEach(track => track.stop());
+    if (S.mic === mic) S.mic = null;
+    if (video.srcObject === picture) video.srcObject = null;
+  };
+  const check = () => { if (!isCurrent()) throw Object.assign(new Error('Camera startup was cancelled.'), { name: 'AbortError' }); };
+  onCleanup(release);
   try {
-    const zoom = track.getCapabilities?.().zoom;
-    if (zoom && zoom.min < (track.getSettings().zoom ?? 1)) await track.applyConstraints({ advanced: [{ zoom: zoom.min }] });
-  } catch { /* no zoom control on this browser */ }
-  await video.play();
-  await listCameras();
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: video_, audio: MIC }); }
+    catch (e) {
+      check();
+      if (e?.name === 'NotFoundError' || e?.name === 'NotAllowedError') stream = await navigator.mediaDevices.getUserMedia({ video: video_ });
+      else throw e;
+    }
+    check();
+    mic = stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null;
+    picture = new MediaStream(stream.getVideoTracks());
+    S.mic = mic; video.srcObject = picture;
+    const track = stream.getVideoTracks()[0];
+    try {
+      const zoom = track.getCapabilities?.().zoom;
+      if (zoom && zoom.min < (track.getSettings().zoom ?? 1)) await track.applyConstraints({ advanced: [{ zoom: zoom.min }] });
+    } catch { /* no zoom control on this browser */ }
+    check();
+    await video.play(); check();
+    await listCameras(); check();
+  } catch (e) { release(); throw e; }
 }
 
 async function listCameras() {
@@ -532,18 +549,36 @@ function cameraFail(e) {
 }
 
 async function begin() {
-  if (S.mode !== 'start') return;
+  if (S.mode !== 'start' || S.cameraStarting) return;
+  const ep = S.epoch, attempt = { cancelled: false, release: null,
+    cancel() { this.cancelled = true; this.release?.(); } };
+  S.cameraStarting = attempt;
+  S.voicePaused = false; talkDone();
+  const current = () => !attempt.cancelled && S.cameraStarting === attempt && ep === S.epoch;
   $('alert').hidden = true;
-  voice.unlock();
-  stayAwake();
-  warmVoice();
-  app.dataset.screen = 'run';
-  $('ambient').classList.add('on');
-  if (!S.sim) {
-    try { await startCamera(); } catch (e) { setMode('start'); app.dataset.screen = 'start'; cameraFail(e); $('ambient').classList.remove('on'); return say(t().noCamera); }
-  }
-  startEars();
-  await readForm();
+  voice.unlock(); stayAwake(); warmVoice();
+  app.dataset.screen = 'run'; $('ambient').classList.add('on');
+  try {
+    // Retire audio-only fallback before re-opening camera+audio. One listener
+    // owns the mic at a time; iOS receives a single combined capture again.
+    const previousStart = S.earsStarting;
+    for (const ears of new Set([S.ears, S.earsPending])) ears?.stop();
+    S.ears = null; S.earsPending = null; S.earsStarting = null;
+    for (const track of S.mic?.getTracks?.() || []) track.stop();
+    S.mic = null;
+    if (previousStart) await previousStart.catch(() => {}); // an uncancellable permission prompt must settle before another capture
+    if (!current()) return;
+    if (!S.sim) await startCamera(current, release => { attempt.release = release; });
+    if (!current()) return;
+    startEars();
+    await readForm();
+  } catch (e) {
+    if (!current() || e?.name === 'AbortError') return;
+    setMode('start'); app.dataset.screen = 'start';
+    cameraFail(e); $('ambient').classList.remove('on');
+    startEars(); // same controller, audio-only: global voice survives camera denial
+    return say(t().noCamera, { system: true });
+  } finally { if (S.cameraStarting === attempt) S.cameraStarting = null; }
 }
 
 async function readForm() {
@@ -715,6 +750,7 @@ function penPoint(now) {
 }
 
 function keepLine(now) {
+  if (S.voicePaused) return;
   const f = S.fields[S.i];
   if (!f || f.kind === 'checkbox' || f.kind === 'button' || voice.speaking) return;
   const p = penPoint(now);
@@ -1255,6 +1291,8 @@ function onVoiceCommand(cmd, rest) {
     if (typeof rest !== 'string' || !Object.hasOwn(routes, rest)) return;
     // End this Paper session before leaving. Late model/ASR results and an old
     // PTT completion must not act on the next page or reopen browser listening.
+    S.cameraStarting?.cancel?.(); S.cameraStarting = null;
+    S.answerSerial = (S.answerSerial || 0) + 1;
     S.epoch++;
     S.earsPttGeneration = (S.earsPttGeneration || 0) + 1;
     S.mode = 'start';
@@ -1273,13 +1311,25 @@ function onVoiceCommand(cmd, rest) {
       try { track.stop(); } catch { /* capture already ended */ }
     }
     S.mic = null; voice.micOpen = false;
+    if (typeof video !== 'undefined') {
+      for (const track of video.srcObject?.getTracks?.() || []) { try { track.stop(); } catch { /* ended */ } }
+      video.srcObject = null;
+    }
     location.assign(routes[rest]);
   }
   else if (cmd === 'done') { if (S.mode === 'write') finishWriting(); else if (S.mode === 'confirm') keep(); }
   else if (cmd === 'redo') redo();
   else if (cmd === 'repeat') repeat();
   else if (cmd === 'skip') skip();
-  else if (cmd === 'ask') rest ? answer(rest) : talkStart({ auto: true });
+  else if (cmd === 'ask') {
+    if (rest && S.paperControl?.(rest)) return;
+    if (rest) {
+      voice.stop(); // an inline wake interrupts coaching before the model answers
+      if (S.mode === 'start') return S.paperControl?.('help');
+      return answer(rest);
+    }
+    return talkStart({ auto: true });
+  }
 }
 
 // ---------- hands-free: "Nib" ----------
@@ -1290,16 +1340,45 @@ async function startEars() {
   if (new URLSearchParams(location.search).has('bot')) return; // the robot finger has no mouth
   if (S.earsStarting) return S.earsStarting;
   if (S.ears?.stream) return S.ears;
+  S.paperControl = text => {
+    const words = String(text || '').toLowerCase().trim().replace(/[.!?]+$/g, '');
+    if (!/^(help|what can i say|stop|pause|quiet|resume|continue|retry|try again|start|start reading)$/.test(words)) return false;
+    S.answerSerial = (S.answerSerial || 0) + 1;
+    voice.stop(); S.awaitQ = 0; S.awaitQContext = null; clearTimeout(talk.auto);
+    const speak = line => say(line, { system: true }); // immediate system voice; no model request
+    if (/^(stop|pause|quiet)$/.test(words)) {
+      S.voicePaused = true; S.arrivedSince = 0; S.onTarget = false;
+      talkDone(); speak('Guidance paused. Say Nib, resume, when you are ready.'); return true;
+    }
+    if (/^(resume|continue)$/.test(words)) {
+      S.voicePaused = false; S.arrivedSince = 0; S.onTarget = false; S.line = null;
+      talkDone(); speak(S.mode === 'start' ? 'Say Nib, retry, to try the camera again.' : 'Guidance is on.'); return true;
+    }
+    if (/^(retry|try again|start|start reading)$/.test(words)) {
+      if (S.cameraStarting) { speak('The camera is still starting. You can say Home.'); return true; }
+      S.voicePaused = false; talkDone();
+      if (S.mode === 'start') begin();
+      else if (S.mode === 'idle') readForm();
+      else if (S.mode === 'done') again();
+      else speak('A form is already open. Say help for the controls.');
+      return true;
+    }
+    talkDone();
+    speak(S.mode === 'start'
+      ? 'You are in Trace. The camera is not ready. Say Nib, retry, to try again. You can also say Home, Around me, or Memory.'
+      : 'You are in Trace. Say Nib, then your question. Say stop to pause guidance and resume to continue. While writing, say done. Keep an answer only after you hear it read back. You can also say Home, Around me, or Memory.');
+    return true;
+  };
   S.ears = null;
   let sequence = 0;
-  const sessionCurrent = token => !!token && !talk.live && S.mode !== 'start'
+  const sessionCurrent = token => !!token && !talk.live
     && token.epoch === S.epoch && token.lang === S.lang && token.ptt === (S.earsPttGeneration || 0);
   const current = token => sessionCurrent(token) && token.mode === S.mode
     && token.field === S.fields[S.i] && token.index === S.i;
   const ears = makeEars({
     ctx: voice.ctx,
     lang: () => S.lang,
-    ignore: () => !!talk.live || S.mode === 'start', // barge-in remains available while Nib speaks
+    ignore: () => !!talk.live, // barge-in remains available while Nib speaks
     // Snapshot at speech onset, not when a slow transcription comes back. In
     // particular, "done" spoken while writing must never Keep a later readback.
     onCapture: () => ({ epoch: S.epoch, mode: S.mode, field: S.fields[S.i], index: S.i,
@@ -1310,6 +1389,9 @@ async function startEars() {
       if (voice.echo(text, token.echoContext)) return;
       const destination = voice.navigation?.(text);
       if (destination) return onVoiceCommand('nav', destination);
+      const spoken = voice.wake?.(text)?.rest ?? text;
+      const globalControl = /^(help|what can i say|stop|pause|quiet)[.!?]*$/i.test(spoken.trim());
+      if ((current(token) || globalControl) && S.paperControl?.(spoken)) return;
       if (!current(token)) {
         const wake = voice.wake(text);
         if (wake) {
@@ -1320,7 +1402,7 @@ async function startEars() {
           if (wake.rest) {
             const retry = { en: 'Please ask that again.', es: 'Por favor, pregunta otra vez.',
               hi: 'कृपया फिर से पूछिए।', zh: '请再问一次。' };
-            say(retry[S.lang] || retry.en, { cue: true }); // immediate system fallback, no network wait
+            say(retry[S.lang] || retry.en, { system: true }); // immediate system fallback, no network wait
           }
         }
         return;
@@ -1339,6 +1421,7 @@ async function startEars() {
       // Resume inside the start interaction; never switch an open iOS mic to playback.
       try { voice.ctx.resume?.()?.catch?.(() => {}); } catch { /* unsupported audio context */ }
       const active = await ears.start(S.mic);
+      if (S.earsPending !== ears) { ears.stop(); return null; }
       S.ears = active;
       S.earsErr = '';
       // A recovered custom listener replaces the browser fallback, rather than
@@ -1352,7 +1435,7 @@ async function startEars() {
       if (e?.name !== 'AbortError') {
         voice.micOpen = false;
         S.earsErr = e?.name || 'error';
-        say(t().noEars);
+        say(t().noEars, { system: true });
         voice.listen(onVoiceCommand);
       }
       return null;
@@ -1405,12 +1488,15 @@ function gotQuestion(text, token) {
     || performance.now() > waiting.until + 10000 || talk.live
     || S.epoch !== waiting.epoch || S.mode !== waiting.mode || S.fields[S.i] !== waiting.field
     || S.i !== waiting.index || S.lang !== waiting.lang || (S.earsPttGeneration || 0) !== waiting.ptt) return false;
+  const wake = voice.wake?.(text);
+  if (wake && !wake.rest) return false; // another bare wake renews listening; it is not the question
+  const question = wake ? wake.rest : text;
   S.awaitQ = 0;
   S.awaitQContext = null;
   clearTimeout(talk.auto);
   voice.earcon(false);
-  showHeard(text);
-  answer(text);
+  showHeard(question);
+  onVoiceCommand('ask', question);
   return true;
 }
 
@@ -1420,7 +1506,7 @@ function gotQuestion(text, token) {
 const talk = { live: null, auto: 0 };
 
 function talkStart({ auto = false } = {}) {
-  if (talk.live || S.mode === 'start') return;
+  if (talk.live) return;
   if (auto && S.ears) return awaitQuestion(); // "Nib": the next phrase our own ears hear is the question
   if (!voice.heard) return say(t().noMic);
   voice.unlock();
@@ -1451,6 +1537,7 @@ async function talkEnd() {
 }
 
 function talkDone() {
+  if (S.voicePaused) { app.dataset.talk = 'paused'; setCue(''); return; }
   delete app.dataset.talk;
   S.cue = null;
   setCue({ write: 'write', reading: 'wait', reveal: 'wait', check: 'wait', done: 'done' }[S.mode] || '');
@@ -1462,6 +1549,14 @@ function showHeard(text) {
 }
 
 async function answer(q) {
+  // Even an immediate local/practice answer supersedes an older model request.
+  const serial = S.answerSerial = (S.answerSerial || 0) + 1;
+  const context = { epoch: S.epoch, mode: S.mode, index: S.i, field: S.fields[S.i],
+    lang: S.lang, ptt: S.earsPttGeneration || 0, wake: S.awaitQContext };
+  const current = () => serial === S.answerSerial && context.epoch === S.epoch
+    && context.mode === S.mode && context.index === S.i && context.field === S.fields[S.i]
+    && context.lang === S.lang && context.ptt === (S.earsPttGeneration || 0)
+    && context.wake === S.awaitQContext && app.dataset.talk === 'thinking';
   S.lastQ = q;
   app.dataset.talk = 'thinking';
   showHeard(q);
@@ -1469,8 +1564,11 @@ async function answer(q) {
   if (localAnswer(q)) return;
   // Practice mode has no model key, so the drawn form answers "where is…" itself.
   const hit = S.sim && S.mode !== 'start' && S.sim.find(q, S.lang);
-  if (hit) { talkDone(); return act({ action: 'find', ...hit }); }
-  const ep = S.epoch;
+  if (hit) {
+    if (!current()) return;
+    talkDone();
+    return act({ action: 'find', ...hit });
+  }
   try {
     const out = await api('/api/ask', {
       question: q,
@@ -1480,10 +1578,11 @@ async function answer(q) {
       mode: S.mode,
       lang: S.lang,
     });
+    if (!current()) return; // a newer question or changed interaction owns the UI now
     talkDone();
-    if (ep !== S.epoch) return; // the page changed while the question was out: its field numbers are stale
     act(out);
   } catch (e) {
+    if (!current()) return;
     talkDone();
     if (S.sim && /Form reading is off/.test(e.message)) say(t().offline);
     else speakErr(e);
@@ -1668,12 +1767,12 @@ function renderSessionContext() {
   const mode = $('sessionMode'), status = $('sessionState'), field = $('currentField');
   if (!mode || !status || !field) return;
   const update = (el, text) => { if (el.textContent !== text) el.textContent = text; };
-  const english = { practice: 'Practice', live: 'Live camera', ready: 'Ready', reading: 'Reading the page', reveal: 'Places found', checkin: 'Find your fingertip', guide: 'Follow the directions', find: 'Find on the page', write: 'Your turn to write', check: 'Reading your writing', confirm: 'Check the readback', done: 'Review your answers', listening: 'Listening', thinking: 'Thinking' };
+  const english = { practice: 'Practice', live: 'Live camera', ready: 'Ready', reading: 'Reading the page', reveal: 'Places found', checkin: 'Find your fingertip', guide: 'Follow the directions', find: 'Find on the page', write: 'Your turn to write', check: 'Reading your writing', confirm: 'Check the readback', done: 'Review your answers', listening: 'Listening', thinking: 'Thinking', paused: 'Guidance paused' };
   const copy = ({
     en: english,
-    es: { practice: 'Práctica', live: 'Cámara en vivo', ready: 'Listo', reading: 'Leyendo la página', reveal: 'Lugares encontrados', checkin: 'Buscando tu dedo', guide: 'Sigue las indicaciones', find: 'Busca en la página', write: 'Es tu turno de escribir', check: 'Leyendo lo escrito', confirm: 'Comprueba la lectura', done: 'Revisa tus respuestas', listening: 'Escuchando', thinking: 'Pensando' },
-    hi: { practice: 'अभ्यास', live: 'लाइव कैमरा', ready: 'तैयार', reading: 'पन्ना पढ़ रहा हूँ', reveal: 'जगहें मिल गईं', checkin: 'उंगली खोज रहा हूँ', guide: 'निर्देशों का पालन करें', find: 'पन्ने पर खोजें', write: 'अब आप लिखें', check: 'आपका लिखा पढ़ रहा हूँ', confirm: 'पढ़ा हुआ जाँचें', done: 'अपने उत्तर जाँचें', listening: 'सुन रहा हूँ', thinking: 'सोच रहा हूँ' },
-    zh: { practice: '练习', live: '实时相机', ready: '准备就绪', reading: '正在阅读页面', reveal: '已找到填写位置', checkin: '正在寻找指尖', guide: '请按指示移动', find: '在页面上查找', write: '请开始书写', check: '正在读取手写内容', confirm: '请核对识别结果', done: '检查你的答案', listening: '正在聆听', thinking: '正在思考' },
+    es: { practice: 'Práctica', live: 'Cámara en vivo', ready: 'Listo', reading: 'Leyendo la página', reveal: 'Lugares encontrados', checkin: 'Buscando tu dedo', guide: 'Sigue las indicaciones', find: 'Busca en la página', write: 'Es tu turno de escribir', check: 'Leyendo lo escrito', confirm: 'Comprueba la lectura', done: 'Revisa tus respuestas', listening: 'Escuchando', thinking: 'Pensando', paused: 'Guía en pausa' },
+    hi: { practice: 'अभ्यास', live: 'लाइव कैमरा', ready: 'तैयार', reading: 'पन्ना पढ़ रहा हूँ', reveal: 'जगहें मिल गईं', checkin: 'उंगली खोज रहा हूँ', guide: 'निर्देशों का पालन करें', find: 'पन्ने पर खोजें', write: 'अब आप लिखें', check: 'आपका लिखा पढ़ रहा हूँ', confirm: 'पढ़ा हुआ जाँचें', done: 'अपने उत्तर जाँचें', listening: 'सुन रहा हूँ', thinking: 'सोच रहा हूँ', paused: 'मार्गदर्शन रुका हुआ है' },
+    zh: { practice: '练习', live: '实时相机', ready: '准备就绪', reading: '正在阅读页面', reveal: '已找到填写位置', checkin: '正在寻找指尖', guide: '请按指示移动', find: '在页面上查找', write: '请开始书写', check: '正在读取手写内容', confirm: '请核对识别结果', done: '检查你的答案', listening: '正在聆听', thinking: '正在思考', paused: '引导已暂停' },
   })[S.lang] || english;
   update(mode, S.sim ? copy.practice : copy.live);
   mode.dataset.kind = S.sim ? 'practice' : 'live';

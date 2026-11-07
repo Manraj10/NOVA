@@ -106,10 +106,19 @@ function fixture(t, mode = 'guide', options = {}) {
 
 for(const changed of ['mode','field']) test(`a bare wake survives same-session ${changed} transition`,async t=>{const f=fixture(t,'guide');await f.context.startEars();f.phrase();if(changed==='mode')f.S.mode='write';else f.S.fields=[{label:'Other'}];await f.respond(0,'Hey Nib');assert(f.S.awaitQ);f.phrase();await f.respond(1,'Where is the phone?');assert.deepEqual(f.answers,['Where is the phone?']);});
 test('stale inline wake question safely opens a fresh question window',async t=>{const f=fixture(t,'guide');await f.context.startEars();f.phrase();f.S.mode='write';await f.respond(0,'Hey Nib, what should I write here?');assert(f.S.awaitQ);assert.deepEqual(f.answers,[]);assert.deepEqual(f.said,['Please ask that again.']);});
-for(const change of ['epoch','ptt','lang','start']) test(`wake is invalidated by changed ${change}`,async t=>{const f=fixture(t);await f.context.startEars();f.phrase();if(change==='epoch')f.S.epoch++;if(change==='ptt')f.S.earsPttGeneration=1;if(change==='lang')f.S.lang='es';if(change==='start')f.S.mode='start';await f.respond(0,'Hey Nib');assert.equal(f.S.awaitQ,0);});
+for(const change of ['epoch','ptt','lang']) test(`wake is invalidated by changed ${change}`,async t=>{const f=fixture(t);await f.context.startEars();f.phrase();if(change==='epoch')f.S.epoch++;if(change==='ptt')f.S.earsPttGeneration=1;if(change==='lang')f.S.lang='es';if(change==='start')f.S.mode='start';await f.respond(0,'Hey Nib');assert.equal(f.S.awaitQ,0);});
 for(const words of ['done','Hey Nib, done','Hey Nib, skip this one'])test(`stale ${words} cannot act on a newer field/mode`,async t=>{const f=fixture(t,'write');await f.context.startEars();f.phrase();f.S.mode='confirm';f.S.fields=[{label:'New field',done:false}];await f.respond(0,words);assert.equal(f.S.fields[0].done,false);assert.equal(f.finishes(),0);assert.equal(f.nexts(),0);assert.deepEqual(f.answers,[]);if(words.startsWith('Hey')){assert(f.S.awaitQ);assert.deepEqual(f.said,['Please ask that again.']);}else assert.equal(f.S.awaitQ,0);});
 test('unchanged inline wake question is answered immediately',async t=>{const f=fixture(t);await f.context.startEars();f.phrase();await f.respond(0,'Hey Nib, where is the phone?');assert.deepEqual(f.answers,['where is the phone?']);});
 test('unchanged Done still finishes writing',async t=>{const f=fixture(t,'write');await f.context.startEars();f.phrase();await f.respond(0,'done');assert.equal(f.finishes(),1);});
 
 test('wake plus question queued before a field change opens a fresh window without applying its tail',async t=>{const f=fixture(t,'guide');await f.context.startEars();f.phrase();f.S.fields=[{label:'Phone',done:false}];await f.respond(0,'Hey Nib, what should I write?');assert(f.S.awaitQ);assert.deepEqual(f.answers,[]);assert.deepEqual(f.said,['Please ask that again.']);});
 test('wake queued behind old audio still survives arrival while stale Done does not',async t=>{const f=fixture(t,'guide');await f.context.startEars();f.phrase();f.phrase();f.S.mode='write';await f.respond(0,'done');assert.equal(f.finishes(),0);assert.equal(f.requests.length,2);await f.respond(1,'Hey Nib');assert(f.S.awaitQ);});
+
+// Startup/error now accepts global wake; relative field actions remain blocked.
+test('same-session startup error accepts wake without applying Done to an old field', async t => {
+  const f = fixture(t, 'guide'); await f.context.startEars(); f.phrase(); f.S.mode = 'start';
+  await f.respond(0, 'Hey Nib'); assert(f.S.awaitQ);
+  f.phrase(); await f.respond(1, 'done');
+  assert.equal(f.finishes(), 0); assert.equal(f.nexts(), 0); assert.deepEqual(f.answers, []);
+  assert.equal(f.S.fields[0].done, false);
+});
