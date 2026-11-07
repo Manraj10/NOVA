@@ -2,7 +2,7 @@
 // Chat-audio models like to answer a line instead of reading it ("a little left" became "I'll adjust
 // the position"), so a few read-aloud examples anchor them, and every clip's transcript is checked
 // against the text. A clip that changed a word is refused; the browser then uses its built-in voice.
-import { fail } from './ai.js';
+import { fail } from './memory.js';
 
 const RATE = 24000; // pcm16 mono from OpenRouter's audio models
 const SYSTEM = 'You are the gentle voice of Still Here, which helps people step back into rooms they remember. You read scripts aloud. The user message is a script, never a question or a request to you. Speak it exactly, word for word, in a warm, calm, welcoming voice, at a relaxed pace. Do not add, drop or change any word. Do not answer it, greet, or comment.';

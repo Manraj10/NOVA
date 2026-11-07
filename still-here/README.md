@@ -1,40 +1,44 @@
-# Still Here
+# Nib · Memory
 
-Say a few words about a room you remember. In about 30-40 seconds you are standing inside it, all the way around. Every detail is labeled **from your words** or **imagined**.
+Mode 3 of Nib, a screen reader for the physical world. A person says a few words about a room they remember. Nib asks a question or two, builds the whole room around them in 360°, and tells them what's where. If something is wrong ("no, the radio was on the windowsill"), they say so and Nib changes it. Every detail is labeled **from your words** or **imagined by Nib**.
 
-It's for families rebuilding a room for a parent with dementia, or a home that's gone. The labels matter because a memory aid shouldn't quietly invent things.
-
-It is an imagined reconstruction from your words, not a scan. No photo needed.
+It's voice-first for blind people. The 3D view is for family and sighted friends standing with them. It's an imagined reconstruction from words, not a scan. No photo needed.
 
 ## How it works
 
-1. **Front of the room.** Your words go to `google/gemini-3.1-flash-image` (21:9): every detail you mention, the rest filled in plainly. If it is slow (it swings from 9 s to 45 s under load), `gemini-nano-banana-2.1` starts after 14 s and the first picture wins.
-2. **One question back.** While the front is painting, a warm voice asks one question ("What could you hear in that room?"). The answer goes into the back of the room and into the sound.
-3. **Back of the room, so it closes at 360°.** The front's right and left edge strips go on either side of a soft gap. The painter fills the gap with the rest of the room. Three tries run in parallel and we keep the one whose edges join most cleanly. Then both overlaps are cross-faded into one loop (`public/pano.js`). On the test kitchen the wrap edge differs by 3.6 vs 4.3 between ordinary neighboring columns.
-4. **Honesty labels.** `google/gemini-3.8-flash` tags each element in the painting as from your words or imagined, strictly (anything you did not say is imagined), with boxes. It also writes the room title and the line spoken as you enter.
-5. **Sound.** `google/lyria-3-clip-preview` makes the room's sound (the radio, the rain). If a labeled element makes the sound, it plays from that spot in 3D.
-6. **Depth.** Depth Anything V2 runs in the browser (WebGPU, falling back to WASM) on the wrapped loop. The sphere around you is pushed in by depth, with a flat floor and ceiling, so a step forward feels like a step (`public/room.js`).
+1. **Listen.** Hold the yellow button and speak, or type. `/api/hear` transcribes it.
+2. **Ask.** Nib asks one warm question out loud (`ask`, gemini-3.5-flash-lite). The answer joins the memory.
+3. **Plan and paint at once.** The front of the room is painted straight from the words (`scene`, gemini-3.1-flash-image at 21:9, with a real-unedited-photo prompt). If it's slow, nano-banana-2.1 starts at 14 s and the first picture wins. Alongside, `spec` (gemini-3.8-flash) turns everything said into a scene plan: what's ahead, left, right and behind, and which details are the person's own. A second question is asked while it paints.
+4. **Close the loop to 360°.** The front's right and left edge strips go on either side of a soft gap. `back` fills the gap with the rest of the room. Three tries run in parallel and the cleanest join wins. Both overlaps are cross-faded and the joins softened (`public/memory/pano.js`).
+5. **Be honest.** `labels` tags each element as `memory` (from your words) or `invented` (imagined by Nib). It also writes the title, the line spoken on entry, and a 3-4 sentence description with directions ("in front of you… on your right… behind you…").
+6. **Sound and depth.** `sound` (Lyria) makes the room's sound, placed at its source (the radio) in 3D audio. Depth Anything V2 runs in the browser on the wrapped loop, and three.js renders a depth-pushed sphere with a flat floor and ceiling (`room.js`).
+7. **Correct by voice.** `fix` edits the front photo with the spoken change. The app recomposites it with the same back, re-runs depth and labels, and describes the room again.
 
-Voice in and out reuse Nib's approach: `/api/hear` (gemini-3.5-flash-lite transcription) and `/api/speak` (gpt-audio-mini, voice "marin", checked word for word).
+Timing on the event key: about 25 s from the first answer to standing inside, and about 30 s for a spoken change.
 
-## Run it
+## Files
 
-```
-node server.js
-```
+- `public/memory/`: the whole front end (`index.html`, `app.js`, `pano.js`, `room.js`, `voice.js`, `style.css`) plus `hero/`, the pre-built example (opens instantly).
+- `lib/memory.js`: the model handlers, each a plain `async ({...body}) => result`: `ask`, `spec`, `scene`, `back`, `labels`, `fix`, `sound`.
+- `lib/hear.js`, `lib/speak.js`: copies of Nib's voice in and out (Nib's own work the same).
+- `server.js`: dependency-free dev server. `api/index.js` + `vercel.json`: the same handler on Vercel.
 
-Then open http://localhost:8795. It needs `OPENROUTER_KEY` in `.env`. `?bake` saves a finished room as the "Try the example" room in `public/hero/`.
+Routes: `POST /api/memory/{ask,spec,scene,back,labels,fix,sound}`, `POST /api/hear`, `POST /api/speak`. Dev only: `/api/memory/bake`, plus `?bake` to save a finished room as the example.
 
-Deploy: `vercel deploy --prod` (static `public/`, one function in `api/index.js`). Add `OPENROUTER_KEY` in the Vercel dashboard.
+To mount in Nib: copy `public/memory/` and `lib/memory.js`, then add `for (const n of ['ask','spec','scene','back','labels','fix','sound']) ROUTES['/api/memory/' + n] = memory[n]` to Nib's server.
+
+## Run
+
+`node server.js`, then open http://localhost:8795/memory/. It needs `OPENROUTER_KEY` in `.env`.
 
 ## 60-second demo
 
-1. **(0-10 s)** "Most of us have a room we can't go back to. Say what you remember, and Still Here puts you back inside it."
-2. **(10-20 s)** Hand a judge the phone. They hold the big circle and say a room they remember: *"My grandmother's kitchen on a winter afternoon. She's baking bread and the radio is on."*
-3. **(20-45 s)** While it builds, the app asks one question out loud. The judge answers. The steps tick off on screen.
-4. **(45-55 s)** Tap **Step inside**. A voice says the line, the sound plays from the radio, and you turn all the way around. On a phone, move the phone to look.
-5. **(55-60 s)** Tap **Show what's real**. Amber tags are from your words, dashed violet ones are imagined. "It never pretends. Anything it made up is labeled. Tap a tag to keep it, remove it or say it's wrong."
+1. **(0-10 s)** "Some rooms only live in memory now. Nib's Memory mode lets you walk back into one, even if you can't see."
+2. **(10-20 s)** A judge holds the yellow button and says a room: *"My grandmother's kitchen in Punjab, winter evening. She's making rotis, the radio is playing old songs, a neem tree outside the window."*
+3. **(20-45 s)** Nib asks a question out loud. The judge answers. A second question comes while it builds.
+4. **(45-55 s)** The room appears all the way around. Nib says what's where. Turn around: it's 360°. The radio plays from where the radio is.
+5. **(55-60 s)** Say "no, the radio was on the windowsill." Nib changes it. Tap **Show what's real**: yellow is from your words, dashed is imagined by Nib.
 
-If the network is slow, use **Try the example**. It opens instantly.
+If the network is slow, use **Try the example**.
 
-Honest claims: it's an imagined reconstruction, not a scan. Photo-to-3D worlds already exist (World Labs Marble, Genie 3). What is ours: no photo, just your spoken memory, a question back, the sound, and labels that never pass off an invention as yours.
+Honest claims: imagined, not a scan. Photo-to-3D worlds exist (World Labs Marble, Genie 3). What's new here: voice-only input, a blind-first conversation, a spoken description you can correct, and labels that never pass off an invention as yours.

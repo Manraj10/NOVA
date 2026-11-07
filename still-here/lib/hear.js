@@ -1,7 +1,7 @@
 // Ears on the server (adapted from Nib): one short spoken phrase (16 kHz mono WAV) in, its words out.
 // Browser speech recognizers can't be trusted here: iPhone Safari's won't restart without a tap,
 // and Brave has none. A fast Gemini model transcribes in about a second.
-import { fail } from './ai.js';
+import { fail } from './memory.js';
 
 export async function hear({ audio, lang } = {}) {
   if (typeof audio !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(audio) || audio.length > 4e6) throw fail('Send the phrase as base64 WAV.', 400);

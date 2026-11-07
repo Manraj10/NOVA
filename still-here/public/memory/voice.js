@@ -47,30 +47,51 @@ export function micButton(btn, ctx, { onText, onState = () => {} }) {
     } catch { /* typing still works */ }
     onState('idle');
   }
-  btn.addEventListener('pointerdown', e => { e.preventDefault(); down = performance.now(); rec ? (btn.dataset.tap = '', stop()) : start(); });
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); hush(); down = performance.now(); rec ? stop() : start(); });
   btn.addEventListener('pointerup', () => { if (rec && performance.now() - down > 450) stop(); });
   btn.addEventListener('pointerleave', () => { if (rec && performance.now() - down > 450) stop(); });
   return { stop };
 }
 
-// Speak a line in the warm voice. Resolves when it finishes (or right away if it can't).
+// Speaking in the warm voice. Clips are fetched ahead so a run of sentences plays without gaps;
+// hush() stops whatever is playing (the person started talking). The browser's voice is the fallback.
 const clips = new Map();
-export async function say(text, ctx, clip) {
-  try {
-    clip ||= clips.get(text);
-    if (!clip) {
-      const r = await fetch('/api/speak', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
-      if (!r.ok) throw new Error('voice');
-      clip = await r.json(); clips.set(text, clip);
-    }
+let playing = null, turn = 0;
+export function fetchClip(text) {
+  if (!clips.has(text)) clips.set(text, fetch('/api/speak', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+    .then(r => r.ok ? r.json() : null).catch(() => null));
+  return clips.get(text);
+}
+export function hush() {
+  turn++;
+  try { playing?.stop(); } catch { }
+  playing = null;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+async function play(text, ctx, clip) {
+  if (clip?.pcm) {
     const bin = atob(clip.pcm), n = bin.length >> 1, c = ctx(), buf = c.createBuffer(1, n, clip.rate), ch = buf.getChannelData(0);
     for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; ch[i] = v / 32768; }
     const s = c.createBufferSource(); s.buffer = buf; s.connect(c.destination); s.start();
+    playing = s;
     await new Promise(ok => { s.onended = ok; });
-    return clip;
-  } catch {
-    if (!('speechSynthesis' in window)) return null;
-    await new Promise(ok => { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; u.onend = ok; u.onerror = ok; speechSynthesis.speak(u); setTimeout(ok, 9000); });
-    return null;
+    return;
   }
+  if (!('speechSynthesis' in window)) return;
+  await new Promise(ok => { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; u.onend = ok; u.onerror = ok; speechSynthesis.speak(u); setTimeout(ok, 12000); });
 }
+// lines: sentences to say in order; baked: { text: clip } already in hand; onLine(i) before each.
+export async function sayAll(lines, ctx, baked = {}, onLine = () => {}) {
+  hush();
+  const me = turn, pending = lines.map(t => baked[t] ? Promise.resolve(baked[t]) : fetchClip(t));
+  for (let i = 0; i < lines.length; i++) {
+    const clip = await pending[i];
+    if (me !== turn) return false;
+    onLine(i);
+    await play(lines[i], ctx, clip);
+    if (me !== turn) return false;
+  }
+  return true;
+}
+export const say = (text, ctx, clip) => sayAll([text], ctx, clip ? { [text]: clip } : {});
+export const sentences = t => String(t || '').match(/[^.!?]+[.!?]+[\s”’"]*|[^.!?]+$/g)?.map(s => s.trim()).filter(Boolean) || [];
