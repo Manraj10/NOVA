@@ -417,10 +417,11 @@ export const voice = {
     const wake = WAKE.exec(low);
     const phrase = (wake ? low.slice(wake[0].length).replace(/^[\s,.:!?;。！？]+/, '') : low)
       .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/,/g, '').replace(/\s+/g, ' ').trim();
-    const explicitMode = /^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /.test(phrase);
+    const navigationPrefix = /^(?:please )?(?:(?:can|could|would|will) you(?: please)? )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /;
+    const explicitMode = navigationPrefix.test(phrase);
     const destination = phrase
       // People say "go home", "open Paper", "take me to Memory", "Around me mode, please": still one whole command.
-      .replace(/^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /, '')
+      .replace(navigationPrefix, '')
       .replace(/( mode| page| screen)?( please)?$/, '');
     // Observed aliases work everywhere. Fuzzy choices remain enabled on Home
     // and after a navigation verb, without rerouting ordinary room answers.

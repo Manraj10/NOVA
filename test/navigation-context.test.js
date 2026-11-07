@@ -30,3 +30,18 @@ test('fuzzy mode choices are retained without turning ordinary content into depa
     assert.equal(voice.navigation(phrase),null,phrase);
   }
 });
+
+test('polite requests to open a mode are navigation rather than Memory edits', () => {
+  const { voice } = loadVoice(file), actions = [];
+  voice.onCommand = (...args) => actions.push(args);
+  for (const prefix of ['', 'Hey Nib, ', 'Hey, Mib, ']) {
+    for (const [phrase, route] of [['can you open Around me','around'], ['could you please open a round me','around'],
+      ['would you switch to Memory please','memory'], ['please can you take me to Trace','paper'], ['will you go home','home']]) {
+      assert.equal(voice.navigation(prefix + phrase),route,prefix+phrase);
+      voice.handle(prefix+phrase);assert.deepEqual(actions.at(-1),['nav',route]);
+    }
+  }
+  for (const phrase of ['can you describe around me','what can memory do','could you read the paper on the table','can you open the paper envelope']) {
+    assert.equal(voice.navigation(phrase),null,phrase);
+  }
+});
