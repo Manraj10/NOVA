@@ -1,5 +1,5 @@
 // The natural voice must say the line word for word or not at all.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 
@@ -11,6 +11,7 @@ const server = http.createServer((req, res) => {
   res.end(`data: ${JSON.stringify({ choices: [{ delta: { audio: { data: pcm.toString('base64'), transcript } } }] })}\n\ndata: [DONE]\n\n`);
 });
 await new Promise(r => server.listen(0, r));
+after(() => server.close());
 process.env.NIB_OPENROUTER_BASE = `http://localhost:${server.address().port}`;
 process.env.OPENROUTER_KEY = 'test';
 const { speak, sameWords } = await import('../lib/speak.js');
@@ -28,6 +29,7 @@ test('a clip that changed the words is refused, so the built-in voice speaks it'
   transcript = "Understood. I'll adjust the position slightly to the left.";
   await assert.rejects(speak({ text: 'a little left' }), e => e.status === 502);
   await assert.rejects(speak({ text: '' }), e => e.status === 400);
-  assert.ok(sameWords('Para. Escribe tu apellido aquí.', 'para escribe tu apellido aqui'));
-  server.close();
+  // Accents/case/punctuation are part of the conservative full-string contract.
+  assert.equal(sameWords('Para. Escribe tu apellido aquí.', 'para escribe tu apellido aqui'), false);
+  assert.ok(sameWords('Para. Escribe tu apellido aquí.', '  Para. Escribe tu apellido aqui\u0301.  '));
 });
