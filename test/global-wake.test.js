@@ -118,6 +118,31 @@ test('teammate phone-observed wake spellings keep the same shared routing contra
   }
 });
 
+test('Trace and specific observed mode mishearings work without routing ordinary answers away', () => {
+  const h = fixture();
+  for (const prefix of ['', 'Nib, ', 'Hey Nib, ']) {
+    for (const [phrase, route] of [['Trace', 'paper'], ['open Trace', 'paper'], ['peeper', 'paper'], ['a round me', 'around'], ['memories', 'memory']]) {
+      assert.equal(h.voice.navigation(prefix + phrase), route, prefix + phrase);
+    }
+    for (const word of ['water', 'later', 'some', 'come', 'hope', 'dome', 'memo']) {
+      assert.equal(h.voice.navigation(prefix + word), null, prefix + word);
+    }
+  }
+});
+
+test('fuzzy recognition remains available for mode choices and explicit navigation', () => {
+  const h = fixture();
+  for (const [phrase, route] of [['payper', 'paper'], ['trase', 'paper'], ['a round me', 'around'], ['memori', 'memory'], ['hom', 'home']]) {
+    assert.equal(h.voice.navigation(phrase, { modeChoice: true }), route, phrase);
+    assert.equal(h.voice.navigation(`Hey Nib, open ${phrase}`), route, phrase);
+  }
+  // Fuzzy choice is not a general-purpose interpretation of room descriptions.
+  assert.equal(h.voice.navigation('water'), null);
+  assert.equal(h.voice.navigation('water', { modeChoice: true }), 'paper');
+  assert.equal(h.voice.navigation('some'), null);
+  assert.equal(h.voice.navigation('some', { modeChoice: true }), 'home');
+});
+
 test('captured active assistant echo still blocks full wake commands and readback navigation', async () => {
   const h = fixture();
   for (const phrase of ['Nib, open memory', 'Hey Nib, switch to paper', 'home', 'done']) {

@@ -327,20 +327,32 @@ export const voice = {
 
   // Shared by Paper, Around and the home hub. Only a whole destination name,
   // optionally introduced by the existing wake phrase, can change pages.
-  navigation(text) {
+  navigation(text, { modeChoice = false } = {}) {
     const low = String(text || '').trim().toLowerCase();
     const wake = WAKE.exec(low);
-    const destination = (wake ? low.slice(wake[0].length).replace(/^[\s,.:!?;。！？]+/, '') : low)
-      .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/,/g, '').replace(/\s+/g, ' ').trim()
+    const phrase = (wake ? low.slice(wake[0].length).replace(/^[\s,.:!?;。！？]+/, '') : low)
+      .replace(/^[\s,.!?。！？"']+|[\s,.!?。！？"']+$/g, '').replace(/,/g, '').replace(/\s+/g, ' ').trim();
+    const explicitMode = /^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /.test(phrase);
+    const destination = phrase
       // People say "go home", "open Paper", "take me to Memory", "Around me mode, please": still one whole command.
       .replace(/^(please )?(go back to|go to|go|open|take me to|take me|switch to|back to)( the)? /, '')
       .replace(/( mode| page| screen)?( please)?$/, '');
-    // Exact, observed aliases tolerate ASR errors without routing ordinary
-    // answers such as "water" or "some" away from the current mode.
+    // Observed aliases work everywhere. Fuzzy choices remain enabled on Home
+    // and after a navigation verb, without rerouting ordinary room answers.
     // "Back" remains a local previous-field/question action.
     const routes = { trace: 'paper', paper: 'paper', peeper: 'paper', 'around me': 'around',
       'a round me': 'around', around: 'around', memory: 'memory', memories: 'memory', home: 'home', menu: 'home' };
-    return Object.hasOwn(routes, destination) ? routes[destination] : null;
+    if (Object.hasOwn(routes, destination)) return routes[destination];
+    if (!(modeChoice || explicitMode) || !destination || /[^a-z ]/.test(destination) || destination.split(' ').length > 3) return null;
+    const lev = (a, b) => {
+      const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+      for (let j = 1; j <= b.length; j++) d[0][j] = j;
+      for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      return d[a.length][b.length];
+    };
+    const close = [...new Set(['trace', 'paper', 'memory', 'around me', 'home']
+      .filter(k => lev(destination, k) <= (k.length >= 5 ? 2 : 1)).map(k => routes[k]))];
+    return close.length === 1 ? close[0] : null;
   },
 
   handle(text) {
