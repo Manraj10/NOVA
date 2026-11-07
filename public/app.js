@@ -1,4 +1,3 @@
-import { FilesetResolver, HandLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.2/vision_bundle.mjs';
 import { voice } from './voice.js';
 import { render, anchorOf } from './draw.js';
 import { makeSim } from './sim.js';
@@ -364,9 +363,10 @@ let hands = null, lastVideoTime = -1;
 const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.2';
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task';
 
-async function loadHands() {
+async function loadHands(loadVision = () => import(`${MP}/vision_bundle.mjs`)) {
   status('Loading hand tracking…');
   try {
+    const { FilesetResolver, HandLandmarker } = await loadVision();
     const files = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
     const make = delegate => HandLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'VIDEO', numHands: 2,
       // A hand seen from above, back up, scores lower than a palm, so detect a bit more readily.
