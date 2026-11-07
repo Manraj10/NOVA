@@ -38,9 +38,9 @@ test('punctuation, case and whitespace variants still address the same shared wa
 
 test('an explicit starting Nib invocation is a question, never an implicit relative action', () => {
   const h = fixture();
-  h.voice.handle('Nib reads forms');
+  h.voice.handle('Nib reads forms'); // a presenter's sentence, not an address: ignored
   h.voice.handle('Nib, done');
-  assert.deepEqual(h.commands, [['ask', 'reads forms'], ['ask', 'done']]);
+  assert.deepEqual(h.commands, [['ask', 'done']]);
 });
 
 for (const [label, route] of [['paper', 'paper'], ['around me', 'around'], ['memory', 'memory'], ['home', 'home']]) {
