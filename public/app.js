@@ -3,6 +3,7 @@ import { voice } from './voice.js';
 import { render, anchorOf } from './draw.js';
 import { makeSim } from './sim.js';
 import { makeDrift } from './drift.js';
+import { makeEars } from './ears.js';
 
 const $ = id => document.getElementById(id);
 const app = $('app'), video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');
@@ -462,8 +463,7 @@ async function api(path, payload) {
 }
 
 // ---------- the flow ----------
-// iPhone and iPad: an always-on mic switches iOS audio to the quiet earpiece, so there the ears are
-// half-duplex: open only while Nib is quiet and not beeping a finger to a place (voice.halfDuplex).
+// iPhone and iPad (coaching text and camera-permission help differ there).
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 // Hands are on the paper, not the screen, so keep it from sleeping (a locked phone stops the camera).
@@ -502,12 +502,7 @@ async function begin() {
   $('alert').hidden = true;
   voice.unlock();
   stayAwake();
-  if (IOS) {
-    const quiet = () => !['guide', 'find', 'start'].includes(S.mode) && !talk.live;
-    voice.halfDuplex(quiet);
-    setInterval(() => { if (!quiet()) voice.ears.pause(); else if (!voice.rec && !voice.speaking) voice.ears.resume(); }, 800);
-  }
-  voice.listen(onVoiceCommand);
+  startEars();
   warmVoice();
   app.dataset.screen = 'run';
   $('ambient').classList.add('on');
@@ -1100,7 +1095,7 @@ function setLang(code) {
   tab.textContent = matchMedia('(pointer: coarse)').matches ? t().startTab : t().startClick;
   tab.lang = code;
   $('captionText').lang = code;
-  if (voice.onCommand) voice.listen(voice.onCommand); // recognize speech in the new language
+  if (voice.rec) voice.listen(voice.onCommand); // the browser recognizer, when it is the ears: new language
   if (S.mode !== 'start') warmVoice();
 }
 
@@ -1123,6 +1118,48 @@ function onVoiceCommand(cmd, rest) {
   else if (cmd === 'ask') rest ? answer(rest) : talkStart({ auto: true });
 }
 
+// ---------- hands-free: "Nib" ----------
+// Nib's own ears (ears.js) open once in the start tap and stay open. Say "Nib", then the question;
+// or "Hey Nib, <question>"; or a bare command like "done". Anything heard while Nib talks is ignored.
+async function startEars() {
+  voice.onCommand = onVoiceCommand;
+  if (new URLSearchParams(location.search).has('bot')) return; // the robot finger has no mouth
+  try {
+    S.ears = await makeEars({
+      ctx: voice.ctx,
+      lang: () => S.lang,
+      ignore: () => !!talk.live, // hold-to-ask has the mic; otherwise listen even while Nib talks (barge-in)
+      onText: text => {
+        if (voice.echo(text)) return; // Nib hearing itself through the speaker
+        if (S.awaitQ > performance.now()) return gotQuestion(text);
+        voice.handle(text);
+      },
+    }).start();
+  } catch {
+    voice.listen(onVoiceCommand); // our ears can't open the mic here: use the browser's recognizer
+  }
+}
+
+function awaitQuestion() {
+  voice.stop(); // "Nib" cuts Nib off
+  S.awaitQ = performance.now() + 8000;
+  app.dataset.talk = 'listening';
+  setCue('listen');
+  showHeard('');
+  voice.earcon(true);
+  buzz(20);
+  clearTimeout(talk.auto);
+  talk.auto = setTimeout(() => { if (S.awaitQ) { S.awaitQ = 0; voice.earcon(false); talkDone(); say(t().heardNothing); } }, 8000);
+}
+
+function gotQuestion(text) {
+  S.awaitQ = 0;
+  clearTimeout(talk.auto);
+  voice.earcon(false);
+  showHeard(text);
+  answer(text);
+}
+
 // ---------- listening: hold to ask ----------
 // Hold the screen (or Space, or the Ask button) and talk. Nib answers from the form itself,
 // and can also act: skip, go back, jump to a field, switch language.
@@ -1130,6 +1167,7 @@ const talk = { live: null, auto: 0 };
 
 function talkStart({ auto = false } = {}) {
   if (talk.live || S.mode === 'start') return;
+  if (auto && S.ears) return awaitQuestion(); // "Nib": the next phrase our own ears hear is the question
   if (!voice.heard) return say(t().noMic);
   voice.unlock();
   talk.live = voice.hear(words => showHeard(words), auto ? () => talkEnd() : null);

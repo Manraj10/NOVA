@@ -117,6 +117,7 @@ export const voice = {
     if (!text) return Promise.resolve();
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
+    this.recent = [...(this.recent || []).slice(-5), text]; // for echo()
     this.stop();
     const my = this.seq, token = {};
     this.current = token;
@@ -227,18 +228,9 @@ export const voice = {
     rec.interimResults = false;
     rec.lang = TAGS[this.lang];
     rec.onresult = e => {
-      const said = e.results[e.results.length - 1][0].transcript.trim();
-      const low = said.toLowerCase();
       // Ignore our own voice: anything heard while speaking, or right after.
       if (this.speaking || performance.now() - this.endedAt < 700) return;
-      const bare = low.replace(/[.,!?。！？]/g, '').trim();
-      if (BARE.test(bare)) return onCommand('ask', '');
-      const wake = WAKE.exec(low);
-      if (wake) return onCommand('ask', said.slice(wake[0].length).replace(/^[\s,.!?]+/, ''));
-      if (DONE.test(bare)) onCommand('done');
-      else if (REPEAT.test(bare)) onCommand('repeat');
-      else if (SKIP.test(bare)) onCommand('skip');
-      else if (REDO.test(bare)) onCommand('redo');
+      this.handle(e.results[e.results.length - 1][0].transcript);
     };
     rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { this.rec = null; this.deaf = true; } };
     rec.onend = () => { if (this.rec === rec) try { rec.start(); } catch { /* already running */ } };
@@ -261,6 +253,28 @@ export const voice = {
         if (!this.rec && !this.deaf && !this.speaking && this.onCommand && allowed()) this.listen(this.onCommand);
       }, 350),
     };
+  },
+
+  // One heard phrase, from the browser recognizer or Nib's own ears (ears.js), to a command.
+  // True when the ears only heard Nib's own recent words coming back through the speaker.
+  echo(text) {
+    const n = s => String(s).toLowerCase().normalize('NFD').replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim();
+    const h = n(text);
+    return !!h && (this.recent || []).some(line => n(line).includes(h));
+  },
+
+  handle(text) {
+    const onCommand = this.onCommand;
+    const said = String(text || '').trim(), low = said.toLowerCase();
+    if (!onCommand || !said) return;
+    const bare = low.replace(/[.,!?。！？"']/g, '').trim();
+    if (BARE.test(bare)) return onCommand('ask', '');
+    const wake = WAKE.exec(low);
+    if (wake) return onCommand('ask', said.slice(wake[0].length).replace(/^[\s,.!?]+/, ''));
+    if (DONE.test(bare)) onCommand('done');
+    else if (REPEAT.test(bare)) onCommand('repeat');
+    else if (SKIP.test(bare)) onCommand('skip');
+    else if (REDO.test(bare)) onCommand('redo');
   },
 
   // Push-to-talk: pause the always-on ears, capture one whole question, then resume.
@@ -299,7 +313,7 @@ export const voice = {
         await Promise.race([done, new Promise(r => setTimeout(r, 1500))]);
         try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari only */ }
         this.ctx?.resume?.(); // the mic can suspend audio on iOS
-        if (this.onCommand) this.listen(this.onCommand);
+        if (resume && this.onCommand) this.listen(this.onCommand); // only if the browser recognizer was the ears
         return `${final} ${interim}`.trim();
       },
     };
