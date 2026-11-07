@@ -295,7 +295,24 @@ voice.onWord = i => {
   S.words.forEach((w, j) => { w.classList.toggle('said', j <= S.wordK); w.classList.toggle('now', j === S.wordK); });
   follow(S.wordK);
 };
-voice.onEnd = () => { for (const w of S.words) { w.classList.add('said'); w.classList.remove('now'); } S.words = []; };
+voice.onEnd = () => {
+  for (const w of S.words) { w.classList.add('said'); w.classList.remove('now'); }
+  S.words = [];
+  offerAutoQuestion();
+};
+function offerAutoQuestion() {
+  const arrival = S.autoQuestion;
+  if (!arrival) return;
+  if (arrival.epoch !== S.epoch || arrival.lang !== S.lang || arrival.ptt !== (S.earsPttGeneration || 0)
+    || arrival.answer !== (S.answerSerial || 0) || arrival.wake !== S.awaitQContext
+    || S.voicePaused || app.dataset.talk || talk.live || S.cue === 'error') {
+    S.autoQuestion = null;
+    return;
+  }
+  if (!['guide', 'checkin', 'idle'].includes(S.mode)) return;
+  S.autoQuestion = null; // consume before the existing listener/earcon can run
+  if (S.ears?.stream && voice.micOpen) awaitQuestion();
+}
 function follow(k) {
   const p = $('captionText'), w = S.words[k];
   if (w && p.scrollHeight > p.clientHeight) p.scrollTop = Math.max(0, w.offsetTop - p.clientHeight / 3);
@@ -554,6 +571,7 @@ function begin({ automatic = false } = {}) {
   const ep = S.epoch, attempt = { cancelled: false, release: null,
     cancel() { this.cancelled = true; this.release?.(); } };
   S.cameraStarting = attempt;
+  S.autoQuestion = null;
   S.voicePaused = false; talkDone();
   const current = () => !attempt.cancelled && S.cameraStarting === attempt && ep === S.epoch;
   $('alert').hidden = true;
@@ -591,11 +609,14 @@ function begin({ automatic = false } = {}) {
         } finally { clearTimeout(timer); }
         if (!current()) return;
         if (typeof voice.ctx?.state === 'string' && voice.ctx.state !== 'running') throw new Error('Tap to enable sound.');
+        S.autoQuestion = { epoch: S.epoch + 1, lang: S.lang, ptt: S.earsPttGeneration || 0,
+          answer: S.answerSerial || 0, wake: S.awaitQContext };
       } else startEars();
       warmVoice();
       await readForm();
     } catch (e) {
       if (!current() || e?.name === 'AbortError') return;
+      S.autoQuestion = null;
       setMode('start'); app.dataset.screen = 'start';
       $('ambient').classList.remove('on');
       if (automatic) {
@@ -1341,6 +1362,7 @@ function onVoiceCommand(cmd, rest) {
     // End this Paper session before leaving. Late model/ASR results and an old
     // PTT completion must not act on the next page or reopen browser listening.
     S.cameraStarting?.cancel?.(); S.cameraStarting = null;
+    S.autoQuestion = null;
     S.answerSerial = (S.answerSerial || 0) + 1;
     S.epoch++;
     S.earsPttGeneration = (S.earsPttGeneration || 0) + 1;
