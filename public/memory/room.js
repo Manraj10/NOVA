@@ -1,6 +1,6 @@
 // The room you stand in: a sphere around you, painted with the 360 memory, pushed in by estimated depth,
 // with a flat floor and ceiling so a step forward feels like a step. Look by dragging or tilting the phone.
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+import * as THREE from './three.module.js'; // three@0.170.0, vendored (a stalled CDN would stop the whole page)
 import { BAND } from './pano.js';
 
 let estimator, warming = null;

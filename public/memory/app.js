@@ -40,7 +40,7 @@ async function api(name, body) {
 const L = {
   greet: 'Memory. Tell me about a room you remember. Just start talking.',
   building: 'Got it. Building your room. It takes about half a minute.',
-  confirm: 'Is that how you remember it? Tell me anything to change.',
+  confirm: 'Is that how you remember it? Say Hey Nib, then tell me anything to change.',
   almost: 'Almost there.',
   added: 'Got it. I’ll add that.',
   glad: 'I’m glad. Look around as long as you like. Say Nib if you want to change anything.',
@@ -140,18 +140,21 @@ addEventListener('pageshow', e => { if (e.persisted && greeted) resume(); });
 
 // ---------- one router for everything heard or typed ----------
 let step = 'home';            // home | asking | building | room
-let windowUntil = 0, collected = '', commitTimer = null;
+let windowUntil = 0, freeUntil = 0, collected = '', commitTimer = null;
 const norm = t => String(t).toLowerCase().replace(/[.,!?"“”'’]/g, '').replace(/\s+/g, ' ').trim();
 
 // cue: the rising chime and the "Listening…" orb (voice.earcon). Windows opened just before Nib speaks (so you
 // can talk over it) stay silent; voice.say hides the orb when a reply starts.
 let orb = false;
-function openWindow(ms = 9000, cue = true) {
+// free: anything said counts (a memory, a change). A window that isn't free (opened while Nib talks, or
+// after it speaks without asking) only takes commands, so people talking around the phone never edit the room.
+function openWindow(ms = 9000, cue = true, free = true) {
   windowUntil = performance.now() + ms;
+  freeUntil = free ? windowUntil : 0;
   if (cue && !orb) { voice.earcon(true); orb = true; }
 }
 function closeWindow() {
-  windowUntil = 0;
+  windowUntil = 0; freeUntil = 0;
   if (!orb) return;
   orb = false;
   if (voice.speaking) voice.listeningUi?.(false); else voice.earcon(false);
@@ -181,9 +184,11 @@ function heard(text, { typed = false } = {}) {
   const cmd = command(norm(words));
   if (cmd) { collected = ''; closeWindow(); return cmd(); }
   if (typed) return commit(words);
+  // in the room, only "Hey Nib", the yellow button or a question from Nib opens the door to a change
+  if (!wake && !collected && performance.now() > freeUntil && step !== 'home') return;
   // speech arrives a phrase at a time: keep collecting until a short silence, then act on all of it
   collected = collected ? `${collected} ${words}` : words;
-  windowUntil = performance.now() + 1800;
+  windowUntil = freeUntil = performance.now() + 1800;
   clearTimeout(commitTimer);
   const check = () => { if (ears?.busy || performance.now() < windowUntil) commitTimer = setTimeout(check, 400); else { const t = collected; collected = ''; closeWindow(); commit(t); } };
   commitTimer = setTimeout(check, 1300);
@@ -256,7 +261,7 @@ function bubble(who, text) {
 }
 function startOver() {
   run++; later = []; retry = null; collected = ''; current = null; changing = false; changeTok++;
-  soundTok++; music?.stop(); music = null; view?.tiltOff();
+  soundTok++; music?.stop(); music = null; view?.tiltOff(); view?.destroy(); view = null;
   step = 'home';
   show('home');
   voice.say(L.over).then(() => { if (step === 'home') openWindow(12000); });
@@ -352,7 +357,7 @@ async function build(memory, me) {
     li.onclick = () => retry?.();
     step = 'building';
     if (broke) { step = 'home'; voice.say('Nib is out of picture credit right now. Say try the example, and I’ll take you into one I built earlier.').then(() => openWindow(12000)); return; }
-    voice.say(L.broke).then(() => openWindow(10000));
+    voice.say(L.broke).then(() => openWindow(10000, true, false));
   }
 }
 
@@ -404,6 +409,7 @@ async function sayLines(lines) {
 async function enter(room, { changed = false } = {}) {
   current = room;
   step = 'room';
+  windowUntil = freeUntil = 0; collected = ''; clearTimeout(commitTimer); // nothing said before carries into the room
   ctx();
   show('room');
   view?.destroy();
@@ -439,8 +445,8 @@ function describeAgain() {
   sayLines(sentences(room.describe)).then(done => { if (done && current === room) confirmAndListen(); });
 }
 function confirmAndListen() {
-  openWindow(16000, false);
-  voice.say(L.confirm).then(() => { if (step === 'room') openWindow(12000); });
+  openWindow(16000, false, false);
+  voice.say(L.confirm).then(() => { if (step === 'room') openWindow(10000, true, false); }); // commands only: a change needs Hey Nib
 }
 
 let muted = false, soundTok = 0;
