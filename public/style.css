@@ -131,3 +131,12 @@ em { font-family: var(--serif); font-style: italic; color: var(--amber); }
 .home-pan::after { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(18,13,9,.55), rgba(18,13,9,.2) 40%, rgba(18,13,9,.75)); }
 @keyframes pan { to { background-position-x: -2692px; } }
 .home-inner { position: relative; }
+
+.mic.big { position: relative; right: auto; bottom: auto; width: 112px; height: 112px; margin: 6px auto 0; box-shadow: 0 20px 60px -10px rgba(242, 166, 84, .55); }
+.mic.big span { width: 22px; height: 36px; border-radius: 12px; }
+.mic.big.live span { width: 28px; height: 28px; border-radius: 6px; }
+#home .mic-note { text-align: center; margin: 14px 0 18px; }
+#home .say textarea { padding: 16px 18px; text-align: left; }
+#home .actions { margin-top: 14px; }
+.wait-bg img { animation: drift 30s linear infinite alternate, reveal 2.4s var(--ease); }
+@keyframes reveal { from { opacity: 0; } }

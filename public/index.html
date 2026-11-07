@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#120d09">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Still Here</title>
-<meta name="description" content="One photo and a memory become a room you can stand inside, with every detail labeled by where it came from.">
+<meta name="description" content="Say a room you remember and stand inside it, with every detail labeled as from your words or imagined.">
 <link rel="icon" href="icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,34 +20,21 @@
   <div class="home-pan" aria-hidden="true"></div>
   <div class="home-inner">
     <h1>Still Here</h1>
-    <p class="lede">Step back into a room <em>you remember.</em></p>
-    <p class="sub">One photo and a few words about how it was. In under a minute you’re standing inside it, all the way around, with every detail marked as real, remembered or imagined.</p>
+    <p class="lede">Say a room you remember. <em>Stand inside it.</em></p>
+    <p class="sub">Whose room, when, what was there. A few words is enough. In about half a minute it’s built all the way around you, and everything you said is marked apart from what was imagined.</p>
+    <button class="mic big" id="mic1" aria-label="Hold to talk"><span></span></button>
+    <p class="mic-note" id="note1">Hold to talk, or tap once to start and again to stop.</p>
+    <div class="say"><textarea id="memory" rows="3" placeholder="…or type it. “My grandmother’s kitchen on a winter afternoon. She’s kneading bread and the radio is on.”"></textarea></div>
     <div class="actions">
-      <label class="btn primary" for="photo">Choose a photo of the room</label>
-      <input id="photo" type="file" accept="image/*" hidden>
+      <button class="btn primary wide" id="build" disabled>Build the room</button>
       <button class="btn quiet" id="example">Try the example</button>
     </div>
-    <p class="fine">An imagined reconstruction, not a scan.</p>
-  </div>
-</main>
-
-<main id="tell" class="screen">
-  <button class="back" data-go="home" aria-label="Back">‹</button>
-  <div class="tell-inner">
-    <figure class="print"><img id="thumb" alt="Your photo"></figure>
-    <h2>What do you remember about this room?</h2>
-    <p class="hint">Who was there, what time of day, what you could hear.</p>
-    <div class="say">
-      <textarea id="memory" rows="4" placeholder="My grandmother’s kitchen on a winter afternoon. She’s kneading bread, the radio is on, and the window light is warm and orange."></textarea>
-      <button class="mic" id="mic1" aria-label="Hold to speak"><span></span></button>
-    </div>
-    <p class="mic-note" id="note1">Hold the circle and speak, or type.</p>
-    <button class="btn primary wide" id="build" disabled>Build the room</button>
+    <p class="fine">An imagined reconstruction from your words, not a scan.</p>
   </div>
 </main>
 
 <main id="wait" class="screen">
-  <div class="wait-bg"><img id="waitimg" alt=""></div>
+  <div class="wait-bg"><img id="waitimg" alt="" hidden></div>
   <div class="wait-inner">
     <p class="kicker" id="clock">Building your room · 0 s</p>
     <h2 id="question">&nbsp;</h2>
@@ -71,7 +58,7 @@
   </header>
   <p class="caption" id="caption"></p>
   <div class="legend" id="legend" hidden>
-    <span class="k photo">From your photo</span><span class="k memory">From your memory</span><span class="k invented">Imagined</span>
+    <span class="k memory">From your words</span><span class="k invented">Imagined</span>
   </div>
   <footer class="room-bottom">
     <div class="stick" id="stick" aria-label="Walk"><span></span></div>
