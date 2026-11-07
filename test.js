@@ -3,22 +3,30 @@
 import http from 'node:http';
 import assert from 'node:assert/strict';
 
+process.env.NIB_PARSE_READS = "1"; // these checks count requests one read at a time (two-read logic: test/parse-reads.test.js)
 const seen = [];
 const PARSE = { title: 'Clinic form', fields: [{ label: 'Full name', kind: 'text', box_2d: [180, 330, 220, 920], say: 'Write your full name.', hint: '' }, { label: 'Bad', kind: 'weird', box_2d: [1, 2], say: '', hint: '' }] };
 const READ = { text: 'Alex Kim', legible: true, spoken: 'You wrote Alex Kim.' };
 const ASK = { say: 'Skipping it.', action: 'skip', field: -1, lang: 'en' };
-const pick = body => (body.includes('close-up') ? READ : body.includes('just said') ? ASK : PARSE);
+const REVIEW = { summary: 'One place is still empty.', missing: [{ label: 'Initials', kind: 'text', box_2d: [700, 100, 740, 400], say: 'Write your initials.', hint: '' }] };
+const FIND = { say: 'The total is $24.50.', action: 'find', field: -1, lang: 'en', box_2d: [800, 600, 850, 900] };
+const LOST = { say: "I don't see a moon on this page.", action: 'find', field: -1, lang: 'en', box_2d: [] };
+const pick = body => (body.includes('close-up') ? READ : body.includes('finished filling in') ? (badReview ? { summary: 'ok' } : REVIEW)
+  : body.includes('where is the total') ? FIND : body.includes('where is the moon') ? LOST : body.includes('just said') ? ASK : PARSE);
 
-let rejectSchemas = false; // a route that refuses response_format, to prove the plain-JSON retry
+let rejectSchemas = false;
+let override = null; // a fixed reply for edge-case checks
+let badReview = false; // a review reply without a missing list must count as a failure // a route that refuses response_format, to prove the plain-JSON retry
 const server = http.createServer(async (req, res) => {
   let body = '';
   for await (const c of req) body += c;
   const b = JSON.parse(body);
   seen.push({ url: req.url, headers: req.headers, body: b });
-  let answer = JSON.stringify(pick(body));
+  let answer = JSON.stringify(override ?? pick(body));
   res.setHeader('content-type', 'application/json');
   if (req.url.includes('dead-model')) { res.statusCode = 404; return res.end('{"error":{"message":"not found"}}'); }
-  if (b.model === 'dead-model' || (rejectSchemas && b.response_format)) { res.statusCode = 400; return res.end('{"error":{"message":"dead-model is not a valid model ID"}}'); }
+  if (b.model === 'dead-model') { res.statusCode = 400; return res.end('{"error":{"message":"dead-model is not a valid model ID"}}'); }
+  if (rejectSchemas && b.response_format) { res.statusCode = 400; return res.end('{"error":{"message":"No endpoints found that can handle the requested parameters."}}'); }
   if (b.model === 'fenced-model') answer = `Here it is:\n\`\`\`json\n${answer}\n\`\`\``;
   if (req.url.startsWith('/v1beta/models/')) return res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: answer }] } }] }));
   if (req.url === '/v1/chat/completions') return res.end(JSON.stringify({ choices: [{ message: { content: answer } }] }));
@@ -31,8 +39,9 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(r => server.listen(0, r));
 const base = `http://127.0.0.1:${server.address().port}`;
-Object.assign(process.env, { NIB_GEMINI_BASE: base, NIB_OPENAI_BASE: base, NIB_ANTHROPIC_BASE: base, NIB_OPENROUTER_BASE: base });
-const KEYS = ['OPENROUTER_KEY', 'OPENROUTER_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
+Object.assign(process.env, { NIB_GEMINI_BASE: base, NIB_OPENAI_BASE: base, NIB_ANTHROPIC_BASE: base, NIB_OPENROUTER_BASE: base, NIB_NVIDIA_BASE: base });
+for (const k of ['NIB_PROVIDER', 'OPENROUTER_MODEL', 'GEMINI_MODEL', 'CLAUDE_MODEL', 'OPENAI_MODEL', 'NVIDIA_MODEL']) delete process.env[k];
+const KEYS = ['OPENROUTER_KEY', 'OPENROUTER_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'NVIDIA_API_KEY'];
 const only = key => { for (const k of KEYS) delete process.env[k]; process.env[key] = 'test-key'; };
 
 const ai = await import('./lib/ai.js');
@@ -102,6 +111,59 @@ assert.ok(!seen.at(-1).body.response_format && seen.at(-1).body.messages[0].cont
 rejectSchemas = false;
 delete process.env.OPENROUTER_MODEL;
 console.log('ok  openrouter: other key name, bad model, fenced JSON, schema-less retry');
+
+// Codex's edge cases: a dead configured model plus schema-rejecting fallbacks still answers in plain JSON,
+// a null field never crashes, an unclear "legible" is not read as clear, an unlocatable missing place is counted.
+process.env.OPENROUTER_MODEL = 'dead-model';
+rejectSchemas = true;
+seen.length = 0;
+assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
+assert.ok(!seen.some(x => x.body.model === 'dead-model' && !x.body.response_format), 'a dead model is not asked again');
+rejectSchemas = false;
+delete process.env.OPENROUTER_MODEL;
+seen.length = 0;
+await ai.parseForm({ image: IMG, all: true });
+assert.ok(JSON.stringify(seen[0].body).includes('Include places that are already filled in'), 'a re-read after a page move lists filled places too');
+override = { title: 'x', fields: [null, 7, PARSE.fields[0]] };
+assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
+for (const legible of [undefined, null, 'false']) {
+  override = { text: 'Alex', spoken: 'You wrote Alex.', ...(legible === undefined ? {} : { legible }) };
+  assert.equal((await ai.readField({ image: IMG, label: 'Name' })).legible, false);
+}
+override = { summary: 'x', missing: [REVIEW.missing[0], { label: 'Phone', kind: 'text', box_2d: [5], say: '', hint: '' }] };
+const half = await ai.reviewForm({ image: IMG, fields: [], lang: 'en' });
+assert.equal(half.missing.length, 1);
+assert.equal(half.unplaced, 1);
+override = null;
+console.log('ok  dead model with schema-rejecting fallbacks, null fields, unclear legible, unplaced missing places');
+
+// "Where is…" comes back with a box to guide the finger to; a find with no usable box is only spoken.
+// The final check returns places the first read missed.
+only('GEMINI_API_KEY');
+const spot = await ai.ask({ question: 'where is the total', image: IMG, fields: [], current: -1, mode: 'idle', lang: 'en' });
+assert.equal(spot.action, 'find');
+assert.deepEqual(spot.box, { x0: 0.6, y0: 0.8, x1: 0.9, y1: 0.85 });
+const lost = await ai.ask({ question: 'where is the moon', image: IMG, fields: [], current: -1, mode: 'idle', lang: 'en' });
+assert.equal(lost.action, 'none');
+assert.equal(lost.box, null);
+const rev = await ai.reviewForm({ image: IMG, fields: [{ label: 'Full name', done: true, answer: 'Alex Kim' }], lang: 'en' });
+assert.equal(rev.missing.length, 1);
+assert.equal(rev.missing[0].label, 'Initials');
+assert.equal(rev.summary, 'One place is still empty.');
+badReview = true;
+await assert.rejects(ai.reviewForm({ image: IMG, fields: [], lang: 'en' }), e => /unreadable/.test(e.message));
+badReview = false;
+console.log('ok  find returns a box, a boxless find is spoken, review returns missed places, a malformed review fails');
+
+// NVIDIA: plain JSON (no response_format), room for 30 fields, base redirected to the mock.
+only('NVIDIA_API_KEY');
+assert.equal(ai.provider(), 'nvidia');
+seen.length = 0;
+assert.equal((await ai.parseForm({ image: IMG })).fields.length, 1);
+assert.equal(seen[0].body.response_format, undefined);
+assert.equal(seen[0].body.max_tokens, 8192);
+assert.ok(seen[0].body.messages[0].content[0].text.includes('JSON Schema'));
+console.log('ok  nvidia: plain JSON request, mocked base');
 
 // A retired Gemini model name falls through to the next one.
 only('GEMINI_API_KEY');

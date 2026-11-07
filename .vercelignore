@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules
+check
+tools
+test
+probe-out
+*.log

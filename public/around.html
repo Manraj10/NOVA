@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Nib · Around me</title>
+<meta name="description" content="Stay in one place and turn slowly. Hear the people and things Nib notices nearby.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="around.css">
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<a class="skip-link" href="#app">Skip to Around me</a>
+<main id="app" aria-label="Around me" aria-live="off" tabindex="-1">
+  <video id="video" playsinline muted autoplay aria-hidden="true"></video>
+  <canvas id="boxes" aria-hidden="true"></canvas>
+  <div id="edge" aria-hidden="true"></div>
+  <div id="chips" aria-hidden="true"></div>
+  <header class="top glass">
+    <a class="back" href="./" aria-label="Nib home"><img src="icon.svg" alt="" width="32" height="32"><span class="brand-name">Nib</span><span class="home-label">Home</span></a>
+    <h1 class="mode-title">Around me</h1>
+    <div class="camera-status"><span id="count" class="count">Nothing yet</span><span id="cameraLens" class="lens-status" role="status" aria-live="polite" hidden></span></div>
+  </header>
+  <section id="aroundControls" inert class="sheet glass" aria-label="Spoken observations">
+    <p id="caption" class="caption" aria-live="off" aria-atomic="true">Stay in one place. Turn slowly to hear what is nearby.</p>
+    <button id="ask" class="primary" type="button" aria-label="Hear a summary of the latest camera view">What’s around me?</button>
+  </section>
+  <section id="start" class="start" aria-labelledby="aroundHeading">
+    <p class="eyebrow">02 / Around me</p>
+    <h2 id="aroundHeading" class="hero-title">Hear what’s<br>around you.</h2>
+    <p class="intro">Stay in one place. Hold your phone at chest height and turn slowly. Nib describes the people and things it notices.</p>
+    <button id="go" class="cta" type="button" aria-label="Start Around me camera descriptions">Start Around me</button>
+    <p class="fine">Say “what’s around me” or tap the screen to hear a summary. Distance estimates are approximate.</p>
+  </section>
+</main>
+<script type="module">
+// Keep controls behind the start screen out of keyboard/VoiceOver navigation.
+// This follows media readiness without owning the camera or narration loop.
+const controls = document.getElementById('aroundControls');
+const camera = document.getElementById('video');
+camera.addEventListener('playing', () => { controls.inert = false; });
+</script>
+<script type="module" src="around-app.js"></script>
+</body>
+</html>
