@@ -194,7 +194,7 @@ test('shared camera audio is reused, its tracks survive listener stop, and iOS s
   const f = fixture(t, 'guide', { shared: true }); await f.context.startEars();
   assert.equal(f.streams.length, 1); assert.equal(f.S.ears.stream, f.S.mic);
   assert.equal(f.context.navigator.audioSession.type, 'play-and-record'); assert.equal(f.context.voice.micOpen, true);
-  assert.equal(f.resumes(), 1); f.S.ears.stop();
+  assert.equal(f.resumes(), 2); f.S.ears.stop();
   assert.equal(f.streams[0].track.stops, 0); assert.equal(f.disconnects(), 3);
 });
 

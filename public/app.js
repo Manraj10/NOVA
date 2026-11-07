@@ -548,37 +548,79 @@ function cameraFail(e) {
   a.hidden = false;
 }
 
-async function begin() {
-  if (S.mode !== 'start' || S.cameraStarting) return;
+function begin({ automatic = false } = {}) {
+  if (S.mode !== 'start') return Promise.resolve();
+  if (S.cameraStarting) return S.cameraStarting.promise || Promise.resolve();
   const ep = S.epoch, attempt = { cancelled: false, release: null,
     cancel() { this.cancelled = true; this.release?.(); } };
   S.cameraStarting = attempt;
   S.voicePaused = false; talkDone();
   const current = () => !attempt.cancelled && S.cameraStarting === attempt && ep === S.epoch;
   $('alert').hidden = true;
-  voice.unlock(); stayAwake(); warmVoice();
   app.dataset.screen = 'run'; $('ambient').classList.add('on');
-  try {
-    // Retire audio-only fallback before re-opening camera+audio. One listener
-    // owns the mic at a time; iOS receives a single combined capture again.
-    const previousStart = S.earsStarting;
-    for (const ears of new Set([S.ears, S.earsPending])) ears?.stop();
-    S.ears = null; S.earsPending = null; S.earsStarting = null;
-    for (const track of S.mic?.getTracks?.() || []) track.stop();
-    S.mic = null;
-    if (previousStart) await previousStart.catch(() => {}); // an uncancellable permission prompt must settle before another capture
-    if (!current()) return;
-    if (!S.sim) await startCamera(current, release => { attempt.release = release; });
-    if (!current()) return;
-    startEars();
-    await readForm();
-  } catch (e) {
-    if (!current() || e?.name === 'AbortError') return;
-    setMode('start'); app.dataset.screen = 'start';
-    cameraFail(e); $('ambient').classList.remove('on');
-    startEars(); // same controller, audio-only: global voice survives camera denial
-    return say(t().noCamera, { system: true });
-  } finally { if (S.cameraStarting === attempt) S.cameraStarting = null; }
+  let pending;
+  pending = (async () => {
+    try {
+      if (!automatic) voice.unlock(); // preserve the normal user-gesture unlock
+      stayAwake();
+      // Retire audio-only fallback before re-opening camera+audio. One listener
+      // owns the mic at a time; iOS receives a single combined capture again.
+      const previousStart = S.earsStarting;
+      for (const ears of new Set([S.ears, S.earsPending])) ears?.stop();
+      S.ears = null; S.earsPending = null; S.earsStarting = null;
+      for (const track of S.mic?.getTracks?.() || []) track.stop();
+      S.mic = null;
+      if (previousStart) await previousStart.catch(() => {}); // an uncancellable permission prompt must settle before another capture
+      if (!current()) return;
+      if (!S.sim) await startCamera(current, release => { attempt.release = release; });
+      if (!current()) return;
+      if (automatic) {
+        // iPhone can allow sound after microphone capture even without a new tap.
+        // Do not start a model read if this arrival cannot actually listen.
+        if (!S.mic?.getAudioTracks?.().some(track => track.readyState !== 'ended')) throw new Error('Tap to enable listening.');
+        voice.micOpen = true; voice.unlock();
+        const active = await startEars({ automatic: true });
+        if (!current()) return;
+        if (!active) throw new Error('Tap to enable listening.');
+        let timer;
+        try {
+          await Promise.race([
+            Promise.resolve().then(() => voice.ctx?.resume?.()).catch(() => {}),
+            new Promise(resolve => { timer = setTimeout(resolve, 800); }),
+          ]);
+        } finally { clearTimeout(timer); }
+        if (!current()) return;
+        if (typeof voice.ctx?.state === 'string' && voice.ctx.state !== 'running') throw new Error('Tap to enable sound.');
+      } else startEars();
+      warmVoice();
+      await readForm();
+    } catch (e) {
+      if (!current() || e?.name === 'AbortError') return;
+      setMode('start'); app.dataset.screen = 'start';
+      $('ambient').classList.remove('on');
+      if (automatic) {
+        attempt.cancel();
+        for (const ears of new Set([S.ears, S.earsPending])) ears?.stop();
+        S.ears = null; S.earsPending = null; voice.micOpen = false;
+        status('Tap Start reading to enable the camera, microphone and sound.');
+        $('startBtn')?.focus?.({ preventScroll: true });
+        return;
+      }
+      cameraFail(e);
+      startEars(); // same controller, audio-only: global voice survives camera denial
+      return say(t().noCamera, { system: true });
+    } finally { if (S.cameraStarting === attempt) S.cameraStarting = null; }
+  })();
+  attempt.promise = pending;
+  return pending;
+}
+
+function autoBegin() {
+  if (S.autoBeginPromise) return S.autoBeginPromise;
+  const query = new URLSearchParams(location.search);
+  if (S.sim || query.has('sim') || query.has('bot') || !navigator.mediaDevices?.getUserMedia)
+    return S.autoBeginPromise = Promise.resolve();
+  return S.autoBeginPromise = begin({ automatic: true });
 }
 
 async function readForm() {
@@ -1342,7 +1384,7 @@ function onVoiceCommand(cmd, rest) {
 // ---------- hands-free: "Nib" ----------
 // Nib's own ears (ears.js) open once in the start tap and stay open. Say "Nib", then the question;
 // or "Hey Nib, <question>"; or a bare command like "done". Anything heard while Nib talks is ignored.
-async function startEars() {
+async function startEars({ automatic = false } = {}) {
   voice.onCommand = onVoiceCommand;
   if (new URLSearchParams(location.search).has('bot')) return; // the robot finger has no mouth
   if (S.earsStarting) return S.earsStarting;
@@ -1429,6 +1471,9 @@ async function startEars() {
       try { voice.ctx.resume?.()?.catch?.(() => {}); } catch { /* unsupported audio context */ }
       const active = await ears.start(S.mic);
       if (S.earsPending !== ears) { ears.stop(); return null; }
+      // A standalone microphone request can be what enables iOS audio. Resume
+      // again after capture, rather than relying only on the pre-permission call.
+      try { voice.ctx.resume?.()?.catch?.(() => {}); } catch { /* unsupported audio context */ }
       S.ears = active;
       S.earsErr = '';
       // A recovered custom listener replaces the browser fallback, rather than
@@ -1443,8 +1488,10 @@ async function startEars() {
       if (e?.name !== 'AbortError') {
         voice.micOpen = false;
         S.earsErr = e?.name || 'error';
-        say(t().noEars, { system: true });
-        voice.listen(onVoiceCommand);
+        if (!automatic) {
+          say(t().noEars, { system: true });
+          voice.listen(onVoiceCommand);
+        }
       }
       return null;
     } finally {
@@ -1956,12 +2003,4 @@ setLang(S.lang);
 setMode('start');
 renderLists();
 requestAnimationFrame(loop);
-// Opened by voice ("Hey Nib, open Trace") there is no tap: start like Around me when iPhone allows sound.
-(async () => {
-  if (S.sim || new URLSearchParams(location.search).has('bot')) return;
-  try {
-    const mic = await voice.autoUnlock(MIC);
-    if (!mic) return;
-    try { if (S.mode === 'start') await begin(); } finally { mic.getTracks().forEach(t => t.stop()); }
-  } catch { /* no permission yet: the start screen stays */ }
-})();
+autoBegin().catch(() => {}); // once, after every controller and UI binding exists
