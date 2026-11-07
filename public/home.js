@@ -2,6 +2,7 @@
 import { voice } from './voice.js';
 import { makeEars, MIC } from './ears.js';
 
+const ABOUT = "I'm Nib. I can read a paper form with you and guide your finger to every blank, tell you who and what is around you, or rebuild a room you remember so your family can step inside. Say Trace, Around me, or Memory.";
 const MENU = 'You are on Nib Home. Say Trace for paper, Around me, or Memory. Say help to hear these choices again, or tap a card.';
 const MEMORY_PENDING = 'Memory is being connected. You are still on Nib Home. Choose Trace or Around me for now.';
 const memoryReady = document.documentElement?.dataset.memoryReady === 'true';
@@ -21,7 +22,7 @@ const state = (message, listening = false) => {
   listen.textContent = listening ? 'Listening · say a mode' : 'Talk to Nib';
 };
 voice.init();
-voice.prefetch([MENU, MEMORY_PENDING, ...Object.values(ROUTES).map(route => route[1])]);
+voice.prefetch([MENU, ABOUT, MEMORY_PENDING, ...Object.values(ROUTES).map(route => route[1])]);
 voice.onCaption = text => { live.textContent = text; };
 
 function go(destination) {
@@ -68,6 +69,8 @@ function handle(text, echoContext, token) {
   }
   if (destination) { wakeUntil = 0; go(destination); return destination; }
   if (help || wake) { wakeUntil = 0; voice.say(MENU); return 'menu'; }
+  // Siri-like: anything said right after "Nib" gets a friendly answer, never silence.
+  if (performance.now() < wakeUntil) { wakeUntil = 0; voice.say(ABOUT); return 'about'; }
   return null;
 }
 
