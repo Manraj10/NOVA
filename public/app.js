@@ -1267,9 +1267,10 @@ async function startEars() {
   if (S.ears?.stream) return S.ears;
   S.ears = null;
   let sequence = 0;
-  const current = token => !!token && !talk.live && S.mode !== 'start'
-    && token.epoch === S.epoch && token.mode === S.mode && token.field === S.fields[S.i]
-    && token.index === S.i && token.lang === S.lang && token.ptt === (S.earsPttGeneration || 0);
+  const sessionCurrent = token => !!token && !talk.live && S.mode !== 'start'
+    && token.epoch === S.epoch && token.lang === S.lang && token.ptt === (S.earsPttGeneration || 0);
+  const current = token => sessionCurrent(token) && token.mode === S.mode
+    && token.field === S.fields[S.i] && token.index === S.i;
   const ears = makeEars({
     ctx: voice.ctx,
     lang: () => S.lang,
@@ -1279,9 +1280,24 @@ async function startEars() {
     onCapture: () => ({ epoch: S.epoch, mode: S.mode, field: S.fields[S.i], index: S.i,
       lang: S.lang, ptt: S.earsPttGeneration || 0, sequence: ++sequence, capturedAt: performance.now(),
       echoContext: voice.echoSnapshot?.() }),
-    isCurrent: current,
+    isCurrent: sessionCurrent,
     onText: (text, token) => {
       if (voice.echo(text, token.echoContext)) return;
+      if (!current(token)) {
+        const wake = voice.wake(text);
+        if (wake) {
+          // Wake is global, but an inline relative instruction was spoken in a
+          // different context. Listen afresh rather than act on the new field.
+          S.earsDelivery = token;
+          try { talkStart({ auto: true }); } finally { S.earsDelivery = null; }
+          if (wake.rest) {
+            const retry = { en: 'Please ask that again.', es: 'Por favor, pregunta otra vez.',
+              hi: 'कृपया फिर से पूछिए।', zh: '请再问一次。' };
+            say(retry[S.lang] || retry.en, { cue: true }); // immediate system fallback, no network wait
+          }
+        }
+        return;
+      }
       if (S.awaitQ && gotQuestion(text, token)) return;
       S.earsDelivery = token; // lets a bare wake phrase identify its ordered follow-up
       try { voice.handle(text); } finally { S.earsDelivery = null; }
@@ -1328,6 +1344,8 @@ function awaitQuestion() {
   const waiting = S.awaitQContext = { epoch: S.epoch, mode: S.mode, field: S.fields[S.i], index: S.i,
     lang: S.lang, ptt: S.earsPttGeneration || 0, after: S.earsDelivery?.sequence || 0, until: S.awaitQ };
   app.dataset.talk = 'listening';
+  $('talk').setAttribute('aria-pressed', 'true');
+  renderSessionContext();
   setCue('listen');
   showHeard('');
   voice.earcon(true);
