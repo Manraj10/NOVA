@@ -1,6 +1,6 @@
 // Runs the real setTip() One Euro filter from public/app.js on synthetic fingertip tracks.
 const assert = require('assert');
-const src = require('fs').readFileSync(process.argv[2], 'utf8');
+const src = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'); // git may check files out with CRLF
 const block = src.match(/const EURO = [\s\S]*?\nfunction setTip\(x, y, now\) \{[\s\S]*?\n\}/)[0];
 let S = { trail: [] };
 eval(`${block}\nglobalThis.setTip = setTip;`);

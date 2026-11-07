@@ -1,6 +1,6 @@
 // Runs the real pickPointer() from public/app.js on synthetic MediaPipe hands.
 const assert = require('assert');
-const src = require('fs').readFileSync(process.argv[2], 'utf8');
+const src = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'); // git may check files out with CRLF
 const pin = src.match(/const pinching = [^\n]+/)[0];
 const fn = src.match(/function pickPointer\(now\) \{[\s\S]*?\n\}/)[0];
 let S;

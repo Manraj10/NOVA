@@ -1,6 +1,6 @@
 // Codex repro: a readback that comes back after the page was re-read must not enter confirm on the new page.
 const assert = require('assert');
-const src = require('fs').readFileSync(process.argv[2], 'utf8');
+const src = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'); // git may check files out with CRLF
 const code = src.match(/async function finishWriting\(\) \{[\s\S]*?\n\}/)[0];
 let S, spoken = [], release;
 const t = () => ({ lift: 'Lift.', blank: 'Blank.', confirm: 'Keep?', unsure: '', wrote: a => `You wrote ${a}.` });

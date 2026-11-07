@@ -1,6 +1,6 @@
 // Pulls the real next() and finish() out of public/app.js and runs them with stand-ins.
 const assert = require('assert');
-const src = require('fs').readFileSync(process.argv[2], 'utf8');
+const src = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'); // git may check files out with CRLF
 const grab = name => src.match(new RegExp(`function ${name}\\(\\) \\{[\\s\\S]*?\\n\\}`))[0];
 const en = eval(`(${src.match(/ {2}en: (\{[\s\S]*?\n {2}\}),\n {2}es:/)[1]})`);
 let S, spoken, activated;

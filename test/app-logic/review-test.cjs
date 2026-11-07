@@ -1,6 +1,6 @@
 // Runs the real review(), finish(), next() and iou from public/app.js against Codex's failure cases.
 const assert = require('assert');
-const src = require('fs').readFileSync(process.argv[2], 'utf8');
+const src = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'); // git may check files out with CRLF
 const grab = re => src.match(re)[0];
 const en = eval(`(${src.match(/ {2}en: (\{[\s\S]*?\n {2}\}),\n {2}es:/)[1]})`);
 const code = [
