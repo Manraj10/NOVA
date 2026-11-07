@@ -42,7 +42,7 @@ function go(destination) {
 function handle(text, echoContext, token) {
   if (leaving) return null;
   const wake = voice.wake?.(text);
-  const destination = voice.navigation?.(text);
+  const destination = voice.navigation?.(text, { modeChoice: true });
   const phrase = String(wake?.rest ?? text ?? '').trim().toLowerCase().replace(/[,.!?。！？]+$/g, '').replace(/\s+/g, ' ');
   const help = /^(help|options|repeat|what can you do|what can i say|what are my options)$/.test(phrase);
   const quiet = /^(stop|quiet|pause|stop speaking|be quiet)$/.test(phrase);
