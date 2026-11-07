@@ -5,8 +5,19 @@
 const FRAME = 2048;
 export const MIC = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
+// The shared voice layer can announce a failed phrase in every mode. Never
+// expose its audio, onset token, or a provider's response/message in this event.
+function reportDrop(reason, _token, details) {
+  const detail = { reason };
+  if (Number.isInteger(details?.status) && details.status >= 400 && details.status <= 599)
+    detail.status = details.status;
+  if (typeof globalThis.dispatchEvent !== 'function' || typeof globalThis.CustomEvent !== 'function') return;
+  try { globalThis.dispatchEvent(new CustomEvent('nib:voice-drop', { detail })); }
+  catch { /* feedback must not break listening in a partial browser or test host */ }
+}
+
 export function makeEars({ ctx, ignore, onText, lang, onCapture = () => null,
-  isCurrent = () => true, onDrop = () => {}, maxQueued = 4,
+  isCurrent = () => true, onDrop = reportDrop, maxQueued = 4,
   requestTimeoutMs = 10000, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let floor = 0.01, live = false, loud = 0, quietMs = 0, chunks = [], pre = [], capture = null;
   const rate = ctx.sampleRate, frameMs = (FRAME / rate) * 1000;
@@ -63,15 +74,18 @@ export function makeEars({ ctx, ignore, onText, lang, onCapture = () => null,
             const r = await fetch('/api/hear', { method: 'POST', signal: controller.signal,
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ audio: wav(job.parts), lang: job.lang }) });
-            if (!r.ok) throw new Error('Transcription failed.');
+            if (!r.ok) throw Object.assign(new Error('Transcription failed.'), { status: r.status });
             const body = await r.json();
             return typeof body.text === 'string' ? body.text : '';
           })();
           const text = await Promise.race([operation, interrupted]);
           if (text && valid(owner, job.token)) onText(text, job.token);
-        } catch {
-          if (owner === cycle && (timedOut || !controller.signal.aborted))
-            onDrop(timedOut ? 'transcription-timeout' : 'transcription-failed', job.token);
+        } catch (error) {
+          if (valid(owner, job.token) && error?.name !== 'AbortError' && (timedOut || !controller.signal.aborted)) {
+            const details = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599
+              ? { status: error.status } : undefined;
+            onDrop(timedOut ? 'transcription-timeout' : 'transcription-failed', job.token, details);
+          }
         } finally {
           if (timer !== undefined) clearTimer(timer);
           if (owner.controller === controller) owner.controller = null;
@@ -87,7 +101,10 @@ export function makeEars({ ctx, ignore, onText, lang, onCapture = () => null,
     const owner = cycle;
     // Bound pending audio, not the first follow-up to an in-flight wake request.
     // On overflow drop the newest phrase explicitly; never evict/reorder old ones.
-    if (owner.queue.length >= limit) { onDrop('queue-full', captured.token); return; }
+    if (owner.queue.length >= limit) {
+      if (valid(owner, captured.token)) onDrop('queue-full', captured.token);
+      return;
+    }
     owner.queue.push({ parts, token: captured.token, lang: captured.lang });
     pump(owner);
   }
