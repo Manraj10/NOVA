@@ -101,7 +101,7 @@ async function startEars(mic) {
   try {
     voice.micOpen = true;
     try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
-    await makeEars({
+    earsRef = await makeEars({
       ctx: voice.ctx, lang: () => 'en',
       ignore: () => false, // barge-in: listen while Nib talks, and drop Nib's own words with the snapshot below
       onCapture: () => voice.echoSnapshot(), // what Nib was saying when this phrase began
@@ -335,4 +335,5 @@ $('ask').addEventListener('click', e => {
 });
 $('go')?.focus(); // VoiceOver lands on "Tap anywhere to start"
 video.addEventListener('click', tellAll);
-window.nibAround = { ask: askAbout, around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
+let earsRef = null; // the live listener, so the camera lifecycle can stop it when the page is left
+window.nibAround = { get ears() { return earsRef; }, ask: askAbout, around, get heading() { return heading; }, get scene() { return scene; }, get lens() { return lens; }, get eyes() { return !!eyes; }, get seen() { return seen; } };
