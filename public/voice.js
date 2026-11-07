@@ -15,10 +15,13 @@ const DONE = /^((i'?m )?(done|finished)|next|listo|terminé|siguiente|हो ग
 const REPEAT = /^(repeat( that)?|say (that|it) again|repite|otra vez|दोबारा|फिर से|再说一遍|重复)$/;
 const SKIP = /^(skip( it| this( one)?)?|saltar|छोड़ो|跳过)$/;
 const REDO = /^(redo|that'?s wrong|wrong|rehacer|दोबारा लिखो|重写)$/;
-// "Hey Nib", not bare "Nib": a presenter says "Nib reads the form..." all through the pitch.
-// Speech recognizers spell a made-up name many ways.
-const WAKE = /^(hey|hi|ok|okay)[\s,]+(nib|nibb|knib|nip|neb|nibs)\b/;
-const NICE = /natural|neural|online|google|samantha|aria|jenny|ava|siri/i;
+// Wake: "Nib" on its own opens listening; "Hey Nib, <question>" asks straight away. A presenter
+// saying "Nib reads the form..." mid-sentence does nothing. Recognizers spell a made-up name many ways.
+const WAKE = /^(hey|hi|ok|okay)[\s,]+(nib|nibb|knib|nip|neb|nibs|nibbs|knob)\b/;
+const BARE = /^((hey|hi|ok|okay) )?(nib|nibb|knib|nip|neb|nibs|nibbs|knob)$/;
+// Best built-in voices first: iPhone Premium/Enhanced downloads, then Edge/Chrome neural voices.
+const RANK = [/premium/i, /enhanced/i, /natural|neural/i, /online|google/i, /ava|zoe|samantha|aria|jenny|siri/i];
+const score = v => { const k = RANK.findIndex(r => r.test(v.name)); return k < 0 ? RANK.length : k; };
 
 export const voice = {
   lang: 'en',
@@ -27,6 +30,11 @@ export const voice = {
   endedAt: 0,
   muted: false,
   voices: [],
+  // The natural voice (/api/speak). Off in robot test runs so they stay offline and free.
+  cloud: !new URLSearchParams(location.search).has('bot'),
+  clips: new Map(), // text -> { done, pcm, rate, p }
+  seq: 0,
+  wordTimers: [],
   onCaption: () => {},
 
   init() {
@@ -52,46 +60,122 @@ export const voice = {
   pick() {
     const tag = TAGS[this.lang].toLowerCase();
     const same = this.voices.filter(v => v.lang?.replace('_', '-').toLowerCase().startsWith(tag.slice(0, 2)));
-    return same.find(v => v.lang.replace('_', '-').toLowerCase() === tag && NICE.test(v.name))
-      || same.find(v => NICE.test(v.name)) || same.find(v => v.lang.replace('_', '-').toLowerCase() === tag) || same[0] || null;
+    const off = v => (v.lang.replace('_', '-').toLowerCase() === tag ? 0 : 0.5); // exact accent wins ties
+    return [...same].sort((x, y) => score(x) + off(x) - score(y) - off(y))[0] || null;
   },
 
   // A soft line ("Next: Phone number.") gets ~1 s to land, then directions may cut in. Hard lines
   // ("Stop. Write your name here.") always finish.
   busy() { return this.speaking && this.kind === 'say' && !(this.soft && performance.now() - this.startedAt > 900); },
 
+  // Fetch (once) the natural-voice clip for a line. entry.pcm stays null if the voice is off,
+  // failed, or changed a word; then the built-in voice speaks that line.
+  clip(text) {
+    let e = this.clips.get(text);
+    if (e) return e;
+    e = { done: false, pcm: null, rate: 24000 };
+    e.p = !this.cloud ? Promise.resolve() : fetch('/api/speak', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, lang: this.lang }),
+    }).then(async r => {
+      if (r.status === 503) this.cloud = false; // no key on the server: stop asking
+      if (!r.ok) return;
+      const j = await r.json();
+      const bytes = Uint8Array.from(atob(j.pcm), c => c.charCodeAt(0));
+      const i16 = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+      e.pcm = Float32Array.from(i16, v => v / 32768);
+      e.rate = j.rate || 24000;
+    }).catch(() => {}).finally(() => {
+      e.done = true;
+      if (!e.pcm) setTimeout(() => { if (this.clips.get(text) === e) this.clips.delete(text); }, 30000); // retry later
+    });
+    this.clips.set(text, e);
+    return e;
+  },
+
+  // Warm the lines Nib is about to say, four at a time, so guidance never waits on the network.
+  prefetch(texts) {
+    if (!this.cloud) return;
+    const q = [...new Set(texts.filter(Boolean))].filter(t => !this.clips.has(t));
+    const next = () => { const t = q.shift(); if (t) this.clip(t).p.then(next); };
+    for (let k = 0; k < 4; k++) next();
+  },
+
+  // Stop whatever is speaking, in either voice.
+  stop() {
+    this.seq++;
+    speechSynthesis.cancel();
+    try { this.source?.stop(); } catch { /* already stopped */ }
+    this.source = null;
+    this.wordTimers.forEach(clearTimeout);
+    this.wordTimers = [];
+  },
+
   // cue: short direction words. They never cut off a full instruction.
+  // The natural voice speaks if its clip is ready (cues) or arrives within 1.5 s (instructions);
+  // otherwise the built-in voice says it, so a slow network never leaves the person in silence.
   say(text, { cue = false, soft = false } = {}) {
     if (!text) return Promise.resolve();
     if (cue && this.busy()) return Promise.resolve();
     this.onCaption(text, cue);
+    this.stop();
+    const my = this.seq, token = {};
+    this.current = token;
+    this.speaking = true;
+    this.kind = cue ? 'cue' : 'say';
+    this.soft = !cue && soft;
+    this.startedAt = performance.now();
+    this.ears?.pause();
     return new Promise(resolve => {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = TAGS[this.lang];
-      const v = this.pick();
-      if (v) u.voice = v;
-      u.rate = cue ? 1.3 : 1.05;
       let done = false;
       const end = () => {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        if (this.current === u) { this.speaking = false; this.kind = ''; this.endedAt = performance.now(); if (!cue) this.onEnd?.(); }
+        if (this.current === token) {
+          this.speaking = false; this.kind = ''; this.endedAt = performance.now();
+          if (!cue) this.onEnd?.();
+          this.ears?.resume();
+        }
         resolve();
       };
-      if (!cue) u.onboundary = e => { if (this.current === u) this.onWord?.(e.charIndex); };
       // ponytail: some browsers never fire onend, so a length-based timeout backs it up
-      const timer = setTimeout(end, 1800 + text.length * 95);
-      u.onend = end;
-      u.onerror = end;
-      this.current = u;
-      this.speaking = true;
-      this.kind = cue ? 'cue' : 'say';
-      this.soft = !cue && soft;
-      this.startedAt = performance.now();
-      speechSynthesis.speak(u);
+      const timer = setTimeout(end, 4000 + text.length * 110);
+      const e = this.clip(text);
+      const go = () => {
+        if (this.seq !== my) return end(); // a newer line took over while this one was loading
+        if (e.pcm && this.ctx?.state === 'running') this.playClip(e, text, cue, end);
+        else this.speakBuiltIn(text, cue, end);
+      };
+      if (e.done || cue || !this.cloud) go();
+      else Promise.race([e.p, new Promise(r => setTimeout(r, 1500))]).then(go);
     });
+  },
+
+  playClip(e, text, cue, end) {
+    const c = this.ctx, buf = c.createBuffer(1, e.pcm.length, e.rate);
+    buf.copyToChannel(e.pcm, 0);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.connect(c.destination);
+    src.onended = end;
+    this.source = src;
+    src.start();
+    // Word-by-word captions: a clip has no word events, so pace the words across its length.
+    if (!cue) for (const m of text.matchAll(/\S+/g)) {
+      this.wordTimers.push(setTimeout(() => this.onWord?.(m.index), (m.index / text.length) * buf.duration * 920));
+    }
+  },
+
+  speakBuiltIn(text, cue, end) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = TAGS[this.lang];
+    const v = this.pick();
+    if (v) u.voice = v;
+    u.rate = cue ? 1.3 : 1.05;
+    if (!cue) u.onboundary = ev => this.onWord?.(ev.charIndex);
+    u.onend = end;
+    u.onerror = end;
+    speechSynthesis.speak(u);
   },
 
   cueWord(dir, near) {
@@ -147,17 +231,36 @@ export const voice = {
       const low = said.toLowerCase();
       // Ignore our own voice: anything heard while speaking, or right after.
       if (this.speaking || performance.now() - this.endedAt < 700) return;
+      const bare = low.replace(/[.,!?。！？]/g, '').trim();
+      if (BARE.test(bare)) return onCommand('ask', '');
       const wake = WAKE.exec(low);
       if (wake) return onCommand('ask', said.slice(wake[0].length).replace(/^[\s,.!?]+/, ''));
-      const bare = low.replace(/[.,!?。！？]/g, '').trim();
       if (DONE.test(bare)) onCommand('done');
       else if (REPEAT.test(bare)) onCommand('repeat');
       else if (SKIP.test(bare)) onCommand('skip');
       else if (REDO.test(bare)) onCommand('redo');
     };
-    rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') this.rec = null; };
+    rec.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { this.rec = null; this.deaf = true; } };
     rec.onend = () => { if (this.rec === rec) try { rec.start(); } catch { /* already running */ } };
     try { rec.start(); } catch { /* already running */ }
+  },
+
+  // iPhone: an open mic moves all sound to the quiet earpiece, so the ears are half-duplex there:
+  // they close before Nib speaks or beeps and reopen once it is quiet. If iOS refuses to reopen
+  // them without a tap (deaf), hold-to-ask still works.
+  halfDuplex(allowed) {
+    this.ears = {
+      pause: () => {
+        const r = this.rec;
+        if (!r) return;
+        this.rec = null;
+        try { r.abort(); } catch { /* already stopped */ }
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* Safari only */ }
+      },
+      resume: () => setTimeout(() => {
+        if (!this.rec && !this.deaf && !this.speaking && this.onCommand && allowed()) this.listen(this.onCommand);
+      }, 350),
+    };
   },
 
   // Push-to-talk: pause the always-on ears, capture one whole question, then resume.
@@ -168,7 +271,7 @@ export const voice = {
     const resume = this.rec;
     this.rec = null;
     resume?.abort?.();
-    speechSynthesis.cancel();
+    this.stop();
     this.speaking = false;
     try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* Safari only */ }
     const rec = new SR();

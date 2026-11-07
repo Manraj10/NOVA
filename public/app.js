@@ -462,8 +462,8 @@ async function api(path, payload) {
 }
 
 // ---------- the flow ----------
-// iPhone and iPad: an always-on mic switches iOS audio to the quiet earpiece, so there the mic opens
-// only while you hold to ask.
+// iPhone and iPad: an always-on mic switches iOS audio to the quiet earpiece, so there the ears are
+// half-duplex: open only while Nib is quiet and not beeping a finger to a place (voice.halfDuplex).
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 // Hands are on the paper, not the screen, so keep it from sleeping (a locked phone stops the camera).
@@ -502,7 +502,13 @@ async function begin() {
   $('alert').hidden = true;
   voice.unlock();
   stayAwake();
-  if (!IOS) voice.listen(onVoiceCommand);
+  if (IOS) {
+    const quiet = () => !['guide', 'find', 'start'].includes(S.mode) && !talk.live;
+    voice.halfDuplex(quiet);
+    setInterval(() => { if (!quiet()) voice.ears.pause(); else if (!voice.rec && !voice.speaking) voice.ears.resume(); }, 800);
+  }
+  voice.listen(onVoiceCommand);
+  warmVoice();
   app.dataset.screen = 'run';
   $('ambient').classList.add('on');
   if (!S.sim) {
@@ -545,6 +551,7 @@ async function readForm() {
     S.readSecs = (performance.now() - t0) / 1000; // shown to the room: measured, not claimed
     S.title = out.title || '';
     S.fields = (out.fields || []).map(f => ({ ...f, done: false }));
+    warmVoice();
     // A menu, letter or receipt with nothing to fill is still worth reading: say what it is and offer "where is…".
     if (!S.fields.length) { setMode('idle'); renderLists(); $('docTitle').textContent = S.title; return say(S.title ? t().nothingToFill(S.title) : t().none); }
     captureDrift(shot);
@@ -883,6 +890,7 @@ async function pageMoved(resume) {
     }
     fresh.forEach((f, j) => { if (!used.has(j)) merged.push(f); });
     S.fields = merged;
+    warmVoice();
     S.reviewed = false; // the page moved: the final check must look again
     captureDrift(shot);
     if (!S.sim && !S.driftOn) await say(t().noLock);
@@ -1093,6 +1101,18 @@ function setLang(code) {
   tab.lang = code;
   $('captionText').lang = code;
   if (voice.onCommand) voice.listen(voice.onCommand); // recognize speech in the new language
+  if (S.mode !== 'start') warmVoice();
+}
+
+// Warm the natural voice for what Nib will say: direction words, every fixed line, and each place's
+// name and instruction exactly as arrive() and activate() phrase them. Clips are cached by text.
+function warmVoice() {
+  const w = t(), cues = ['up', 'down', 'left', 'right'].flatMap(d => [voice.cueWord(d, false), voice.cueWord(d, true)]);
+  const places = S.fields.filter(f => !f.done).flatMap((f, i) => {
+    const body = `${f.say}${f.hint ? ` ${f.hint}` : ''}`, coach = ` ${IOS ? w.coachTap : w.coach}`;
+    return [i === 0 ? w.first(f.label) : `${w.next} ${f.label}.`, `${w.stop} ${body}`, body, ...(i === 0 ? [`${w.stop} ${body}${coach}`] : [])];
+  });
+  voice.prefetch([...cues, ...places, ...Object.values(w).filter(v => typeof v === 'string')]);
 }
 
 function onVoiceCommand(cmd, rest) {

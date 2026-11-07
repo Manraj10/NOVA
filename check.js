@@ -2,6 +2,7 @@
 // handwriting crops, then says whether a guided finger would land on every blank.
 //   npm run check                                    the key and model in .env
 //   npm run check -- google/gemini-3.8-flash anthropic/claude-opus-5.5    compare OpenRouter models
+//   npm run check -- --runs 5                        read the form 5 times: one lucky run proves nothing
 // Each run costs a few cents of API credit.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -30,18 +31,27 @@ function score(fields) {
   return { hit: key.fields.length - misses.length, misses, extra: left.map(f => f.label) };
 }
 
-const models = process.argv.slice(2);
+const argv = process.argv.slice(2), ri = argv.indexOf('--runs');
+const RUNS = ri >= 0 ? Math.max(1, parseInt(argv.splice(ri, 2)[1], 10) || 1) : 1;
+const models = argv;
 for (const model of models.length ? models : [null]) {
   if (model) { if (p !== 'openrouter') { console.log('Model names only apply to an OpenRouter key.'); break; } process.env.OPENROUTER_MODEL = model; }
   const name = model || `${p}${p === 'openrouter' ? ` (${process.env.OPENROUTER_MODEL || 'google/gemini-3.8-flash'})` : ''}`;
   console.log(`\n${name}`);
   try {
-    let t = performance.now();
-    const form = await ai.parseForm({ image: img('form.jpg'), lang: 'en' });
-    const s = score(form.fields);
-    console.log(`  form:  ${s.hit}/${key.fields.length} blanks on target in ${((performance.now() - t) / 1000).toFixed(1)} s`);
-    if (s.misses.length) console.log(`         missed: ${s.misses.join('; ')}`);
-    if (s.extra.length) console.log(`         extra (should be none, the office-use box must be skipped): ${s.extra.join(', ')}`);
+    let t, worst = key.fields.length;
+    const hits = [], missed = {};
+    for (let run = 0; run < RUNS; run++) {
+      t = performance.now();
+      const form = await ai.parseForm({ image: img('form.jpg'), lang: 'en' });
+      const s = score(form.fields);
+      hits.push(s.hit); worst = Math.min(worst, s.hit);
+      for (const m of s.misses) { const k = m.replace(/ \(.*$/, ''); missed[k] = (missed[k] || 0) + 1; }
+      console.log(`  form:  ${s.hit}/${key.fields.length} blanks on target in ${((performance.now() - t) / 1000).toFixed(1)} s`);
+      if (s.misses.length) console.log(`         missed: ${s.misses.join('; ')}`);
+      if (s.extra.length) console.log(`         extra (should be none, the office-use box must be skipped): ${s.extra.join(', ')}`);
+    }
+    if (RUNS > 1) console.log(`  over ${RUNS} runs: ${hits.join(', ')} of ${key.fields.length} (worst ${worst})${Object.keys(missed).length ? `; missed most: ${Object.entries(missed).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} x${n}`).join(', ')}` : ''}`);
     t = performance.now();
     const [a, b] = await Promise.all([
       ai.readField({ image: img('last-name.jpg'), label: 'Last name', kind: 'text', lang: 'en' }),
@@ -49,7 +59,7 @@ for (const model of models.length ? models : [null]) {
     ]);
     const good = a.text.trim().toLowerCase() === 'kim' && b.text === 'checked';
     console.log(`  read:  "${a.text}" and "${b.text}" (want "Kim" and "checked") in ${((performance.now() - t) / 1000).toFixed(1)} s  ${good ? 'ok' : 'WRONG'}`);
-    console.log(`  ${s.hit >= key.fields.length - 1 && good ? 'GOOD TO DEMO' : 'NOT GOOD ENOUGH: try another model'}`);
+    console.log(`  ${worst >= key.fields.length - 1 && good ? 'GOOD TO DEMO' : 'NOT GOOD ENOUGH: try another model'}${RUNS > 1 ? ' (judged on the worst run)' : ''}`);
   } catch (e) {
     console.log(`  failed: ${e.message}`);
   }
