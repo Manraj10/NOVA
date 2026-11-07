@@ -30,7 +30,7 @@ export async function depthOf(loop, onStatus = () => {}) {
   return out;
 }
 
-const R = 4, EYE = 1.55, CEIL = 1.35, PULL = 0.6;
+const R = 4, EYE = 1.55, CEIL = 1.35, PULL = 0.5;
 
 export function makeRoom(host, { pano, depth, tags = [] }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -46,11 +46,11 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
     const dw = depth.width, dh = depth.height, dd = depth.getContext('2d').getImageData(0, 0, dw, dh).data;
     dAt = (u, vb) => {
       let s = 0;
-      for (const a of [-1, 0, 1]) for (const b of [-1, 0, 1]) {
+      for (let a = -3; a <= 3; a++) for (let b = -3; b <= 3; b++) {
         const i = ((Math.floor(u * dw) + a) % dw + dw) % dw, j = Math.max(0, Math.min(dh - 1, Math.floor(vb * dh) + b));
         s += dd[(j * dw + i) * 4];
       }
-      return s / 9 / 255;
+      return s / 49 / 255;
     };
   }
   // the band's average depth, used toward the poles
@@ -69,14 +69,14 @@ export function makeRoom(host, { pano, depth, tags = [] }) {
     return out.set(Math.sin(lon) * Math.cos(lat) * r, Math.sin(lat) * r, -Math.cos(lon) * Math.cos(lat) * r);
   };
 
-  const segX = 384, segY = 192;
+  const segX = 512, segY = 256;
   const geo = new THREE.PlaneGeometry(1, 1, segX, segY), pos = geo.attributes.position, uv = geo.attributes.uv, p = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) { point(uv.getX(i), uv.getY(i), p); pos.setXYZ(i, p.x, p.y, p.z); }
   const tex = new THREE.CanvasTexture(pano);
   tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = THREE.RepeatWrapping; tex.anisotropy = 4;
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, opacity: 0 });
   scene.add(new THREE.Mesh(geo, mat));
-  scene.fog = new THREE.Fog(0x120d09, 4.5, 11);
+  scene.fog = new THREE.Fog(0x120d09, 7, 16);
 
   // tags: u around the loop, vb down the painting
   const placed = tags.map(t => ({ ...t, p: point(t.u, 1 - ((1 - BAND) / 2 + t.vb * BAND)).multiplyScalar(0.96) }));
