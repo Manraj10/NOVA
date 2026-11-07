@@ -1,0 +1,402 @@
+/* Nib: carbon-paper indigo, sign-here-flag yellow, Atkinson Hyperlegible (made by the Braille Institute for low-vision readers). */
+:root {
+  --carbon: #1A1F4E;
+  --carbon-deep: #10132F;
+  --carbon-line: rgba(247, 246, 242, 0.1);
+  --flag: #FFE14D;
+  --paper: #F7F6F2;
+  --paper-dim: rgba(247, 246, 242, 0.72);
+  --stamp: #2FBF71;
+  --marker: #FF4FA3;
+  --sans: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+  --tab-tip: 0.6em;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--carbon-deep); color: var(--paper); }
+body { font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--flag); outline-offset: 3px; }
+
+#app {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* ---------- top bar ---------- */
+.bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 20px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  background: var(--carbon-deep);
+  border-bottom: 1px solid var(--carbon-line);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-flag {
+  width: 30px; height: 18px;
+  background: var(--flag);
+  clip-path: polygon(0 0, 68% 0, 100% 50%, 68% 100%, 0 100%);
+  border-radius: 3px 0 0 3px;
+}
+.wordmark { font-weight: 800; font-size: 26px; letter-spacing: -0.01em; }
+.doc {
+  margin: 0;
+  font-size: 17px;
+  color: var(--paper-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.steps { display: flex; align-items: center; gap: 12px; }
+.count { font-family: var(--mono); font-weight: 700; font-size: 14px; color: var(--paper-dim); }
+.progress { display: flex; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.progress li {
+  width: 22px; height: 8px;
+  border-radius: 4px;
+  background: rgba(247, 246, 242, 0.18);
+  transition: background-color 0.3s, width 0.3s;
+}
+.progress li[data-state="active"] { width: 34px; background: var(--flag); }
+.progress li[data-state="done"] { background: var(--stamp); }
+.progress li[data-state="skipped"] { background: rgba(247, 246, 242, 0.08); }
+
+/* ---------- stage ---------- */
+.stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--carbon);
+}
+@media (min-width: 1100px) { .stage { grid-template-columns: 1fr 360px; } }
+#video { display: none; }
+.view { position: relative; min-width: 0; min-height: 0; }
+#canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+[data-sim] #canvas { cursor: none; }
+
+/* What Nib sees: the form's structure as the AI understood it. */
+.panel {
+  display: none;
+  min-height: 0;
+  padding: 22px 20px 18px;
+  background: var(--carbon-deep);
+  border-left: 1px solid var(--carbon-line);
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+}
+@media (min-width: 1100px) { .panel { display: grid; } }
+.panel-label { margin: 0; font-weight: 700; font-size: 15px; color: var(--paper-dim); }
+.panel-title { margin: 0 0 8px; font-size: 22px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; text-wrap: balance; }
+.fields { margin: 0; padding: 0; list-style: none; overflow-y: auto; display: grid; align-content: start; gap: 6px; scrollbar-width: thin; }
+.fields li {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: rgba(247, 246, 242, 0.04);
+  border: 1px solid transparent;
+  animation: row-in 0.42s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+  transition: background-color 0.25s, border-color 0.25s;
+}
+@keyframes row-in { from { opacity: 0; transform: translateX(18px); } }
+.fields .n {
+  display: grid;
+  place-items: center;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(247, 246, 242, 0.1);
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 13px;
+}
+.f-body { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: baseline; min-width: 0; }
+.f-label { font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f-kind { font-family: var(--mono); font-weight: 500; font-size: 13px; color: var(--paper-dim); }
+.f-answer, .f-hint { grid-column: 1 / -1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f-answer { font-family: var(--mono); color: var(--stamp); }
+.f-hint { color: var(--paper-dim); white-space: normal; }
+.fields li[data-state="active"] { background: rgba(255, 225, 77, 0.12); border-color: rgba(255, 225, 77, 0.55); }
+.fields li[data-state="active"] .n { background: var(--flag); color: var(--carbon); }
+.fields li[data-state="done"] .n { background: var(--stamp); color: var(--carbon-deep); }
+.fields li[data-state="skipped"] { opacity: 0.45; }
+.panel-foot {
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--stamp);
+  color: var(--carbon-deep);
+  animation: row-in 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+}
+.panel-foot[hidden] { display: none; }
+.panel-foot strong { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.panel-foot span { font-weight: 700; font-size: 15px; }
+
+/* The handwriting card: the crop the AI reads, with what it read. */
+.readback {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  margin: 0;
+  width: min(420px, calc(100% - 40px));
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--carbon-deep);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--carbon-line);
+  animation: card-in 0.4s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+.readback[hidden] { display: none; }
+@keyframes card-in { from { opacity: 0; transform: translateY(18px) scale(0.96); } }
+.readback img { display: block; width: 100%; max-height: 150px; object-fit: contain; background: #fbfaf6; }
+.readback figcaption { display: grid; gap: 4px; padding: 12px 16px 14px; }
+.rb-label { font-weight: 700; font-size: 15px; color: var(--paper-dim); }
+.rb-label::after { content: " · reading handwriting"; }
+.readback[data-state="ok"] .rb-label::after { content: " · read"; color: var(--stamp); }
+.readback[data-state="unsure"] .rb-label::after { content: " · partly unclear"; color: var(--flag); }
+.readback[data-state="empty"] .rb-label::after { content: " · empty"; color: var(--marker); }
+.rb-text { font-weight: 800; font-size: 28px; min-height: 1.2em; letter-spacing: -0.01em; }
+.readback[data-state="reading"] .rb-text::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em; height: 0.12em;
+  background: var(--flag);
+  animation: blink 0.8s steps(2) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.start {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--carbon);
+}
+[data-screen="run"] .start { display: none; }
+[data-screen="start"] .caption { display: none; }
+.start { overflow-y: auto; }
+
+.start-hit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+}
+.start-hit:focus-visible { outline-offset: -8px; }
+.start-body {
+  position: relative;
+  max-width: 760px;
+  display: grid;
+  justify-items: start;
+  gap: 20px;
+  pointer-events: none;
+}
+.start-body .controls, .start-body a { pointer-events: auto; }
+
+/* The sign-here tab: the one loud thing on the page. */
+.tab {
+  margin: 0;
+  padding: 0.18em calc(0.5em + var(--tab-tip)) 0.2em 0.5em;
+  font-weight: 800;
+  font-size: clamp(36px, 6.6vw, 92px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--carbon);
+  background: var(--flag);
+  clip-path: polygon(0 0, calc(100% - var(--tab-tip)) 0, 100% 50%, calc(100% - var(--tab-tip)) 100%, 0 100%);
+  border-radius: 10px 0 0 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  animation: tab-in 0.6s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+@keyframes tab-in { from { transform: translateX(-24px); opacity: 0; } }
+.lede { margin: 0; max-width: 34ch; font-size: clamp(18px, 2.1vw, 24px); line-height: 1.4; color: var(--paper-dim); }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; }
+.langs { display: flex; flex-wrap: wrap; gap: 8px; }
+.langs button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 2px solid var(--carbon-line);
+  border-radius: 999px;
+  background: transparent;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+}
+.langs button:hover { border-color: rgba(247, 246, 242, 0.35); }
+.langs button[aria-pressed="true"] { border-color: var(--flag); background: var(--flag); color: var(--carbon); }
+.cam { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; color: var(--paper-dim); }
+.cam select {
+  min-height: 44px;
+  max-width: 260px;
+  padding: 0 12px;
+  border: 2px solid var(--carbon-line);
+  border-radius: 10px;
+  background: var(--carbon-deep);
+  font-size: 15px;
+  color: var(--paper);
+}
+[data-sim] .cam { display: none; }
+.status { margin: 0; min-height: 1.4em; font-size: 16px; color: var(--paper-dim); }
+.reader[data-on="true"] { color: var(--stamp); }
+.reader[data-on="false"] { color: var(--marker); }
+.mode-link { color: var(--paper); font-weight: 700; text-underline-offset: 4px; text-decoration-thickness: 2px; text-decoration-color: var(--flag); }
+
+/* ---------- caption bar ---------- */
+.caption {
+  display: grid;
+  grid-template-columns: 132px 1fr auto;
+  align-items: stretch;
+  min-height: 132px;
+  background: var(--carbon-deep);
+  border-top: 1px solid var(--carbon-line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* The cue tile doubles as a hot/cold meter: it fills with yellow as the finger closes in. */
+.cue {
+  --close: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  background:
+    linear-gradient(to top, rgba(255, 225, 77, 0.28) calc(var(--close) * 100%), transparent calc(var(--close) * 100%)),
+    var(--carbon);
+  color: var(--flag);
+  transition: color 0.2s;
+}
+.cue-glyph { font-size: 58px; line-height: 1; font-weight: 800; min-height: 58px; }
+.cue-word { font-family: var(--mono); font-weight: 700; font-size: 14px; letter-spacing: 0.06em; min-height: 1em; }
+.cue[data-cue="on"] { background: var(--flag); color: var(--carbon); }
+.cue[data-cue="write"] { background: var(--flag); color: var(--carbon); }
+.cue[data-cue="done"] { background: var(--stamp); color: var(--carbon-deep); }
+.cue[data-cue="wait"] .cue-glyph::before {
+  content: "";
+  display: block;
+  width: 34px; height: 34px;
+  margin: 12px;
+  border: 4px solid rgba(255, 225, 77, 0.25);
+  border-top-color: var(--flag);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.caption-text {
+  margin: 0;
+  align-self: center;
+  padding: 18px 28px;
+  font-weight: 700;
+  font-size: clamp(22px, 2.8vw, 44px);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+/* Listening: the caption shows your own words as you say them, in marker pink. */
+[data-talk] .caption-text { color: var(--marker); }
+[data-talk="listening"] .view::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 4px var(--marker), inset 0 0 80px rgba(255, 79, 163, 0.35);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+@keyframes breathe { 50% { opacity: 0.55; } }
+.cue[data-cue="listen"] { background: var(--marker); color: var(--carbon-deep); }
+.cue[data-cue="listen"] .cue-glyph {
+  width: 52px;
+  height: 46px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 50% / 8px 40% no-repeat,
+    linear-gradient(currentColor, currentColor) 50% 50% / 8px 90% no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 50% / 8px 60% no-repeat;
+  animation: level 0.9s ease-in-out infinite alternate;
+}
+@keyframes level {
+  to {
+    background-size: 8px 85%, 8px 35%, 8px 95%;
+  }
+}
+.cue[data-cue="think"] .cue-glyph::before {
+  content: "";
+  display: block;
+  width: 34px; height: 34px;
+  margin: 12px;
+  border: 4px solid rgba(255, 79, 163, 0.25);
+  border-top-color: var(--marker);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Words light up as Nib speaks them. */
+.caption-text span { color: rgba(247, 246, 242, 0.38); transition: color 0.12s; }
+.caption-text span.said { color: var(--paper); }
+.buttons { display: flex; align-items: center; gap: 12px; margin: 0 20px; }
+.talk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 64px;
+  padding: 0 22px 0 18px;
+  border: 2px solid rgba(247, 246, 242, 0.28);
+  border-radius: 14px;
+  background: transparent;
+  font-weight: 800;
+  font-size: 20px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.talk svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.talk svg rect { fill: currentColor; stroke: none; }
+.talk:hover { border-color: rgba(247, 246, 242, 0.55); }
+.talk[aria-pressed="true"] { border-color: var(--marker); background: var(--marker); color: var(--carbon-deep); }
+[data-screen="start"] .talk { display: none; }
+.action {
+  min-height: 64px;
+  min-width: 180px;
+  padding: 0 26px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--flag);
+  color: var(--carbon);
+  font-weight: 800;
+  font-size: 20px;
+  cursor: pointer;
+  transition: transform 0.12s, opacity 0.2s;
+}
+.action:hover:not(:disabled) { transform: translateY(-1px); }
+.action:active:not(:disabled) { transform: translateY(1px); }
+.action:disabled { opacity: 0.45; cursor: default; }
+.action:focus-visible { outline-color: var(--paper); }
+
+@media (max-width: 720px) {
+  .bar { grid-template-columns: auto 1fr; gap: 12px; padding: 10px 14px; }
+  .steps { grid-column: 1 / -1; justify-content: space-between; }
+  .progress li { width: 16px; }
+  .progress li[data-state="active"] { width: 26px; }
+  .caption { grid-template-columns: 88px 1fr; min-height: 0; }
+  .cue-glyph { font-size: 40px; min-height: 40px; }
+  .caption-text { padding: 14px 16px; font-size: 22px; }
+  .buttons { grid-column: 1 / -1; margin: 0 14px 14px; }
+  .buttons .action { flex: 1; }
+  .start { padding: 16px; place-items: center start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "nib",
+  "private": true,
+  "type": "module",
+  "description": "A screen reader for paper: reads a form aloud and guides your hand to every field.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0"
+  }
+}
