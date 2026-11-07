@@ -113,6 +113,7 @@ async function build(mem) {
     $('question').textContent = room.title;
     $('enter').hidden = false;
     $('enter').onclick = () => enter(room);
+    window.__lastRoom = room;
     if (params.has('bake')) bake(room);
   } catch (e) {
     clearInterval(tick);
