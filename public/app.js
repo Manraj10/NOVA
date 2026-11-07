@@ -18,7 +18,7 @@ const T = {
   en: {
     hold: 'Hold the form still. Reading it now.',
     count: (title, n) => `${title}. I found ${n} ${n === 1 ? 'place' : 'places'} to fill.`,
-    first: l => `First: ${l}. Put one finger on the page.`,
+    first: l => `First: ${l}. Rest one finger of your free hand on the page.`,
     none: "I can't find any blanks. Slide the whole form under the camera, then tap to try again.",
     next: 'Next:',
     stop: 'Stop.',
@@ -52,7 +52,7 @@ const T = {
   es: {
     hold: 'Mantén el formulario quieto. Lo estoy leyendo.',
     count: (title, n) => `${title}. Encontré ${n} ${n === 1 ? 'espacio' : 'espacios'} por llenar.`,
-    first: l => `Primero: ${l}. Pon un dedo en la hoja.`,
+    first: l => `Primero: ${l}. Apoya un dedo de la mano libre en la hoja.`,
     none: 'No encuentro espacios en blanco. Pon todo el formulario bajo la cámara y toca para intentar de nuevo.',
     next: 'Siguiente:',
     stop: 'Alto.',
@@ -86,7 +86,7 @@ const T = {
   hi: {
     hold: 'फ़ॉर्म को स्थिर रखिए। मैं इसे पढ़ रहा हूँ।',
     count: (title, n) => `${title}। भरने के लिए ${n} जगहें मिलीं।`,
-    first: l => `पहले: ${l}। एक उंगली पन्ने पर रखिए।`,
+    first: l => `पहले: ${l}। खाली हाथ की एक उंगली पन्ने पर रखिए।`,
     none: 'मुझे कोई खाली जगह नहीं दिखी। पूरा फ़ॉर्म कैमरे के नीचे रखिए और फिर टैप कीजिए।',
     next: 'अगला:',
     stop: 'रुकिए।',
@@ -120,7 +120,7 @@ const T = {
   zh: {
     hold: '请把表格放稳，我正在读。',
     count: (title, n) => `${title}。我找到 ${n} 处要填写。`,
-    first: l => `第一处：${l}。把一根手指放在纸上。`,
+    first: l => `第一处：${l}。用空着的那只手，把一根手指放在纸上。`,
     none: '我没找到空白处。请把整张表放到摄像头下，然后点一下重试。',
     next: '下一处：',
     stop: '停。',
@@ -233,7 +233,9 @@ async function loadHands() {
   status('Loading hand tracking…');
   try {
     const files = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
-    const make = delegate => HandLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'VIDEO', numHands: 2 });
+    const make = delegate => HandLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: 'VIDEO', numHands: 2,
+      // A hand seen from above, back up, scores lower than a palm, so detect a bit more readily.
+      minHandDetectionConfidence: 0.35, minHandPresenceConfidence: 0.35, minTrackingConfidence: 0.35 });
     hands = await make('GPU').catch(() => make('CPU'));
     status('Ready. Hand tracking is on.');
   } catch {
@@ -246,15 +248,32 @@ function trackHands(now) {
   lastVideoTime = video.currentTime;
   const r = hands.detectForVideo(video, now);
   S.handPts = r.landmarks || [];
+  S.handLabels = (r.handedness || r.handednesses || []).map(h => h?.[0]?.categoryName || '');
   S.trackN = (S.trackN || 0) + 1;
-  if (!S.handPts.length) return;
+  if (!S.handPts.length) { S.pointerIdx = -1; return; }
   S.handAt = now;
-  // While guiding, follow whichever index fingertip is closest to the target.
-  const f = S.mode === 'guide' || S.mode === 'find' ? target() : null;
-  const a = f ? anchorOf(f) : null;
-  const tips = S.handPts.map(h => h[8]);
-  const tip = a ? tips.reduce((p, q) => (dist(q, a) < dist(p, a) ? q : p)) : tips[0];
+  S.pointerIdx = pickPointer(now);
+  const tip = S.handPts[S.pointerIdx][8];
   setTip(tip.x, tip.y, now);
+}
+
+// One hand points (resting on the page), the other holds the pen. Never follow the pen hand:
+// learn the pointing hand from the first hand that shows up alone and isn't gripping a pen, then
+// prefer that hand, avoid pen grips, and stay with the hand already being followed.
+const pinching = h => Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y) < 0.45 * Math.hypot(h[0].x - h[9].x, h[0].y - h[9].y);
+function pickPointer(now) {
+  const H = S.handPts, L = S.handLabels;
+  if (H.length === 1) {
+    if (!S.pointerLabel && L[0] && !pinching(H[0])) S.pointerLabel = L[0];
+    return 0;
+  }
+  const fresh = S.tip && now - S.tipSeen < 600;
+  // Staying with the followed hand only breaks near-ties (jitter), so one wrong frame can't stick.
+  const score = (h, i) => (S.pointerLabel && L[i] === S.pointerLabel ? 2 : 0) - (pinching(h) ? 1.5 : 0)
+    + (fresh && dist(h[8], S.tip) < 0.06 ? 1 : 0);
+  let best = 0;
+  H.forEach((h, i) => { if (score(h, i) > score(H[best], best)) best = i; });
+  return best;
 }
 
 function setTip(x, y, now) {
@@ -439,7 +458,7 @@ function guide(now) {
 
 // ponytail: venue knob. ?tol=1.5 widens the "you're there" zone when fingertip jitter in bad light
 // keeps a finger from ever settling inside it.
-const TOL = Math.min(3, Math.max(0.5, Number(new URLSearchParams(location.search).get('tol')) || 1));
+const TOL = Math.min(3, Math.max(0.5, Number(new URLSearchParams(location.search).get('tol')) || (S.sim ? 1 : 1.3))); // real tracking jitters more than a mouse
 
 // How far the fingertip is from where it should be, in units of frame height.
 function offset(f, tip) {
@@ -891,8 +910,9 @@ function hud(now) {
   S.hudAt = now;
   const hands = now - (S.handAt || 0) < 500 ? S.handPts.length : 0;
   const track = S.sim ? 'Practice mode: the pointer is the fingertip' : `Hand tracking <b>${S.fps} fps</b> · ${hands ? `${hands} ${hands === 1 ? 'hand' : 'hands'} seen` : 'no hand in view'}`;
+  const lock = !S.sim && S.pointerLabel ? '<br>Pointing hand <b>locked</b> (yellow)' : '';
   const ai = S.lastApi ? `<br>Last AI call: ${S.lastApi.job} <b>${S.lastApi.secs.toFixed(1)} s</b>` : '';
-  $('panelHud').innerHTML = track + ai;
+  $('panelHud').innerHTML = track + lock + ai;
 }
 
 function status(text) { $('status').textContent = text; }
