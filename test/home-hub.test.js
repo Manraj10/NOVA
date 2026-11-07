@@ -11,11 +11,11 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture({defer=false,available=true,memoryReady=true,deny=false,resumeBlocked=false,resumeReject=false,deferResume=false,deferEars=false,locationSearch='',deferNavigationSpeech=false,deferMenu=false}={}) {
   const nodes={live:{textContent:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}},listen:{textContent:'',attrs:{},setAttribute(k,v){this.attrs[k]=v;}}};
   const events={},domEvents={},said=[],saidOptions=[],destinations=[],echoCalls=[],listeners=[],order=[],streams=[],permissionsQueue=[],speechQueue=[],menuQueue=[],earcons=[];
-  let permissions=0,stops=0,now=1000,timerId=0,finishResume,finishEars;
+  let permissions=0,stops=0,autoUnlocks=0,now=1000,timerId=0,finishResume,finishEars;
   const timers=new Map(),shared=loadVoice(voiceFile).voice;
   const resumeGate=new Promise(resolve=>{finishResume=resolve;}),earsGate=new Promise(resolve=>{finishEars=resolve;});
   const audio={state:'suspended',resume(){order.push('resume');if(resumeReject)return Promise.reject(Error('NotAllowedError'));if(deferResume)return resumeGate;if(!resumeBlocked)this.state='running';return Promise.resolve();}};
-  const voice={seq:0,ctx:null,micOpen:false,init(){},unlock(){order.push('unlock');this.unlocked=true;this.ctx ||= audio;Promise.resolve(this.ctx.resume()).catch(()=>{});},
+  const voice={seq:0,ctx:null,micOpen:false,init(){},async autoUnlock(constraints){autoUnlocks++;const stream=await context.navigator.mediaDevices.getUserMedia({audio:constraints});this.micOpen=true;this.unlock();await this.ctx.resume();return stream;},unlock(){order.push('unlock');this.unlocked=true;this.ctx ||= audio;Promise.resolve(this.ctx.resume()).catch(()=>{});},
     say(t,opts){this.seq++;said.push(t);saidOptions.push(opts);order.push('speech');if(deferMenu&&/^You are on Nib Home/.test(t))return new Promise(r=>menuQueue.push(r));return deferNavigationSpeech&&/^Opening/.test(t)?new Promise(r=>speechQueue.push(r)):Promise.resolve();},
     earcon(up){earcons.push(up);},wake:shared.wake.bind(shared),prefetch(){},navigation:shared.navigation.bind(shared),echoSnapshot:()=>({active:true,recent:['menu']}),
     echo(text,captured){echoCalls.push([text,captured]);return captured?.echo===true;},stop(){this.seq++;}};
@@ -29,7 +29,7 @@ function fixture({defer=false,available=true,memoryReady=true,deny=false,resumeB
   vm.createContext(context);vm.runInContext(source+'\nthis.startHome=start;this.goHome=go;this.initialHomeStartup=starting;',context);
   return{context,voice,nodes,said,saidOptions,destinations,echoCalls,events,domEvents,listeners,order,streams,audio,earcons,finishMenu:()=>menuQueue.shift()?.(),ready:context.initialHomeStartup||Promise.resolve(),
     get mic(){return streams.at(-1);},release(index=0){const [pending]=permissionsQueue.splice(index,1);pending.resolve(pending.mic);},rejectPermission(index=0){permissionsQueue.splice(index,1)[0].reject(Error('denied late'));},
-    resumeAudio(){audio.state='running';finishResume();},finishEars,finishSpeech:()=>speechQueue.shift()?.(),permissions:()=>permissions,stops:()=>stops,at:time=>{now=time;},
+    resumeAudio(){audio.state='running';finishResume();},finishEars,finishSpeech:()=>speechQueue.shift()?.(),permissions:()=>permissions,autoUnlocks:()=>autoUnlocks,stops:()=>stops,at:time=>{now=time;},
     async advance(ms){now+=ms;for(const[id,t]of[...timers])if(t.at<=now){timers.delete(id);t.fn();}await flush();}};
 }
 test('simultaneous Home starts share one microphone request and expose actual listening state',async()=>{
@@ -237,4 +237,13 @@ test('an old greeting cannot overwrite a newer bare Nib listening intent',async(
 test('navigation while greeting is pending cannot reopen or replace destination feedback',async()=>{
   const f=fixture({deferMenu:true});await f.ready;f.context.goHome('paper');const message=f.nodes.live.textContent;
   f.finishMenu();await flush();assert.equal(f.nodes.live.textContent,message);assert.deepEqual(f.earcons,[]);assert.deepEqual(f.destinations,['paper.html']);
+});
+
+// Upstream now offers voice.autoUnlock; Home must not add a second probe around
+// its existing capture-first, same-stream start path (especially on Safari).
+test('shared autoUnlock availability does not add another Home probe or microphone',async()=>{
+  const f=fixture();await f.ready;await flush();
+  assert.equal(f.autoUnlocks(),0);assert.equal(f.permissions(),1);
+  assert.equal(f.listeners.length,1);assert.equal(f.listeners[0].stream,f.mic);
+  assert.equal(f.stops(),0);assert.equal(f.said.filter(t=>/^You are on Nib Home/.test(t)).length,1);
 });
