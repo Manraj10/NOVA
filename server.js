@@ -25,6 +25,7 @@ const TYPES = {
 const ROUTES = { '/api/parse': parseForm, '/api/read': readField, '/api/ask': ask, '/api/review': reviewForm, '/api/speak': speak };
 
 async function readJson(req) {
+  if (req.body && typeof req.body === 'object') return req.body; // Vercel already parsed it
   const chunks = []; let size = 0;
   for await (const c of req) {
     size += c.length;
@@ -37,7 +38,8 @@ async function readJson(req) {
 
 const json = (res, status, obj) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
-http.createServer(async (req, res) => {
+// One handler for both homes: this local server, and Vercel (api/index.js) in production.
+export async function handler(req, res) {
   try {
     const { pathname } = new URL(req.url, 'http://localhost');
     if (pathname === '/api/status') return json(res, 200, await status());
@@ -57,7 +59,9 @@ http.createServer(async (req, res) => {
     if (!e.status) console.error(e);
     json(res, e.status || 500, { error: e.status ? e.message : 'Something broke on the server.' });
   }
-}).listen(PORT, () => {
+}
+
+if (!process.env.VERCEL) http.createServer(handler).listen(PORT, () => {
   console.log(`Nib running at http://localhost:${PORT}`);
   console.log(`Practice mode:   http://localhost:${PORT}/?sim`);
   const p = provider();
