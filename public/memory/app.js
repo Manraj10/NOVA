@@ -30,18 +30,44 @@ const screen = () => document.querySelector('.screen.on')?.id;
 voice.onCaption = text => { const el = { room: $('caption'), talk: $('question'), home: $('note1') }[screen()]; if (el) el.textContent = text; };
 
 async function api(name, body) {
-  const r = await fetch('/api/memory/' + name, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `${name} failed`);
-  return j;
+  // Leave room for the server's bounded model calls and image fallback. Sound
+  // can retry once on the local server; it does not block entering the room.
+  const ms = ({ ask: 22000, spec: 30000, scene: 70000, back: 70000, fix: 70000, labels: 50000, sound: 125000 })[name] || 30000;
+  const controller = new AbortController();
+  let timer;
+  const operation = (async () => {
+    const r = await fetch('/api/memory/' + name, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `${name} failed`);
+    return j;
+  })();
+  const deadline = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`${name} took too long. Please try again.`);
+      error.name = 'TimeoutError';
+      reject(error); // settle even when the transport or response body ignores abort
+      controller.abort();
+    }, ms);
+  });
+  try { return await Promise.race([operation, deadline]); }
+  finally { clearTimeout(timer); }
+}
+
+async function loadFrontImage(src) {
+  let timer;
+  const deadline = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('The picture arrived but could not open. Please try again.')), 15000);
+  });
+  try { return await Promise.race([load(src), deadline]); }
+  finally { clearTimeout(timer); }
 }
 
 // ---------- the fixed lines, made in the natural voice while the page loads ----------
 const L = {
   greet: 'Memory. Tell me about a room you remember. Just start talking.',
-  building: 'Got it. Building your room. It takes about half a minute.',
+  building: 'Got it. Building your room. It can take a minute or more. You can say Home or start over.',
   confirm: 'Is that how you remember it? Tell me anything to change.',
-  almost: 'Almost there.',
+  almost: 'I’m still building your room. You can say Home or start over any time.',
   added: 'Got it. I’ll add that.',
   glad: 'I’m glad. Look around as long as you like. Say Nib if you want to change anything.',
   what: 'What should be different?',
@@ -49,7 +75,7 @@ const L = {
   changing: 'Okay. Changing the whole room. About twenty seconds.',
   done: 'Done.',
   fail: 'I couldn’t change it that time. Say it again.',
-  broke: 'Something went wrong. Say try again.',
+  broke: 'I couldn’t finish the room. Say try again or Home.',
   over: 'Starting over. Tell me about a room you remember.',
   here: 'You’re already in Memory.',
   home: 'Going home.', paper: 'Opening Trace.', around: 'Opening Around me.',
@@ -317,7 +343,7 @@ function command(t) {
   if (/^(help|options|what can i say|what can you do|what are my options)$/.test(t)) return () => voice.say(step === 'building'
     ? 'I’m building your room. Say add a detail, how long is left, stop, start over, or home.'
     : 'Say describe the room, show what’s real, change a detail, start over, or home.');
-  if (step === 'building' && /^(is it (ready|done)( yet)?|how (much )?long( .*)?|are you done( yet)?|whats happening|what is happening|status|progress|when (will|is|can)( .*)?)$/.test(t)) return () => voice.say(L.almost);
+  if (step === 'building' && /^(is it (ready|done)( yet)?|how (much )?long( .*)?|are you done( yet)?|whats happening|what is happening|status|progress|when (will|is|can)( .*)?)$/.test(t)) return () => voice.say(retry ? L.broke : L.almost);
   if (step !== 'room') return null;
   if (/^(yes|yeah|yep|yup|yes it is|thats (right|it)|perfect|correct|exactly|thanks|thank you|ok|okay|good|great|nice|beautiful|wow|its perfect)$/.test(t)) return () => voice.say(L.glad);
   if (/^(no|nope|not quite|not really|thats wrong|wrong|its wrong)$/.test(t)) return () => sayAndListen(L.what, 14000);
@@ -403,7 +429,7 @@ async function converse(memory) {
   build(memory, me);
 }
 
-const STEPS = [['spec', 'Listening back to what you said'], ['scene', 'Building the room in front of you'], ['back', 'Building the walls behind you'], ['labels', 'Marking what came from your words'], ['sound', 'Bringing back the sound'], ['depth', 'Giving it depth']];
+const STEPS = [['spec', 'Planning from your words'], ['scene', 'Building the room in front of you'], ['back', 'Building the walls behind you'], ['labels', 'Marking what came from your words'], ['sound', 'Bringing back the sound'], ['depth', 'Giving it depth']];
 function steps() {
   const li = bubble('nib', 'Building the room…');
   const head = document.createElement('span'); head.className = 'head';
@@ -417,6 +443,11 @@ function steps() {
     t0, secs,
     tick: () => { head.textContent = `Building the room… ${secs()} s`; $('clock').textContent = `${secs()} s`; },
     finish: () => { head.textContent = `Built in ${secs()} s`; },
+    fail: () => {
+      head.textContent = 'Build stopped. Say try again or Home.';
+      $('clock').textContent = 'Build stopped';
+      for (const e of ol.querySelectorAll('.go')) { e.className = 'bad'; e.querySelector('.t').textContent = 'not finished'; }
+    },
     go: k => { el(k).className = 'go'; },
     done: k => { const e = el(k); e.className = 'done'; e.querySelector('.t').textContent = secs() + ' s'; },
     bad: (k, msg) => { const e = el(k); e.className = 'bad'; e.querySelector('.t').textContent = msg; },
@@ -425,28 +456,43 @@ function steps() {
 
 async function build(memory, me) {
   step = 'building';
-  let nudge;
-  const st = steps(), tick = setInterval(st.tick, 250);
+  let nudge, stage = 'scene';
+  const st = steps(), tick = setInterval(() => {
+    if (me !== run || leaving) { clearInterval(tick); return; }
+    st.tick();
+  }, 250);
   try {
     // the front is built straight from the words while the scene plan (what is where, which details are
     // theirs) is worked out alongside; the plan feeds the walls behind you, the labels and the sound
     const said = memory;
-    nudge = setTimeout(() => { if (me === run && step === 'building' && !voice.speaking) voice.say(L.almost); }, 17000);
+    const progress = () => {
+      if (me !== run || step !== 'building' || leaving || listeningPaused || document.hidden) return;
+      // A progress update must not take the floor from a question or correction.
+      if (!voice.speaking && !collected && performance.now() >= windowUntil) voice.say({
+        scene: 'I’m still drawing your room. You can say Home or start over.',
+        image: 'The picture has arrived. I’m opening it now.',
+        spec: 'The picture is ready. I’m matching it with the details you described.',
+        labels: 'The picture is ready. I’m adding its spoken description.',
+      }[stage]);
+      nudge = setTimeout(progress, 20000);
+    };
+    nudge = setTimeout(progress, 17000);
     st.go('spec'); st.go('scene');
-    const specP = api('spec', { memory }).catch(() => ({ memory: said, front_prompt: said, back_prompt: '', spoken: [], sound_prompt: said })).then(s => (st.done('spec'), s));
-    const frontP = api('scene', { memory: said }).then(r => load(r.image));
+    const specP = api('spec', { memory }).catch(() => ({ memory: said, front_prompt: said, back_prompt: '', spoken: [], sound_prompt: said })).then(s => { if (me === run) st.done('spec'); return s; });
+    const frontP = api('scene', { memory: said }).then(r => { if (me !== run) return null; stage = 'image'; return loadFrontImage(r.image); });
     const front = await frontP;
-    st.done('scene');
     if (me !== run) return clearInterval(tick);
+    st.done('scene');
     $('waitimg').src = front.src; $('waitimg').hidden = false;
     const frontJpg = shrink(front, 1600, 0.88);
+    stage = 'spec';
     const spec = await specP;
     if (me !== run) return clearInterval(tick);
-    st.go('labels');
-    const labelsP = api('labels', { scene: frontJpg, spec }).then(r => (st.done('labels'), r)).catch(e => (st.bad('labels', 'skipped'), console.warn(e), null));
+    stage = 'labels'; st.go('labels');
+    const labelsP = api('labels', { scene: frontJpg, spec }).then(r => { if (me === run) st.done('labels'); return r; }).catch(e => { if (me === run) st.bad('labels', 'skipped'); console.warn(e); return null; });
     st.go('sound');
     const wantsMusic = MUSIC.test(spec.memory || said);
-    const soundP = (wantsMusic ? api('sound', { spec }) : Promise.resolve(null)).then(r => (st.done('sound'), 'data:audio/mpeg;base64,' + r.audio)).catch(e => (st.bad('sound', 'skipped'), console.warn(e), null));
+    const soundP = (wantsMusic ? api('sound', { spec }) : Promise.resolve(null)).then(r => { if (me === run) st.done('sound'); return r ? 'data:audio/mpeg;base64,' + r.audio : null; }).catch(e => { if (me === run) st.bad('sound', 'skipped'); console.warn(e); return null; });
     // You step inside as soon as the front and its labels are ready. The walls behind you start as a soft
     // continuation of the front and fill in when painted (a few seconds later); then the room takes its depth.
     st.go('back');
@@ -456,7 +502,9 @@ async function build(memory, me) {
     const { loop: loop0, L: len, s, w } = makeLoop(front, placeholderBack(front));
     const room = {
       spec, front, back: null, frontJpg, pano: equirect(loop0), depth: null,
-      title: lab?.title || spec.title || 'Your room', narration: lab?.narration || '', describe: lab?.describe || '',
+      title: lab?.title || spec.title || 'Your room',
+      narration: lab?.narration || (!lab ? 'Your room is ready, but its spoken description was unavailable. You can describe a change or start over.' : ''),
+      describe: lab?.describe || '',
       tags: tagsFrom(lab, { L: len, s, w }), faceU: (w / 2 - s) / len, sound: null, sid: me,
       ambient: [spec.memory || said, spec.room, spec.time, ...(spec.sounds || [])].filter(Boolean).join(' '),
     };
@@ -473,14 +521,22 @@ async function build(memory, me) {
     clearInterval(tick); clearTimeout(nudge);
     console.warn(e);
     if (me !== run) return;
-    retry = () => { retry = null; li.onclick = null; build(memory, ++run); };
+    st.fail();
+    retry = () => { retry = null; li.onclick = null; li.onkeydown = null; build(memory, ++run); };
     const broke = /balance|credit|402/i.test(e.message);
-    const li = bubble('nib', broke ? 'Nib is out of picture credit right now. Say “try the example” to step into one I built earlier.' : `Something went wrong: ${e.message} Say “try again”, or tap here.`);
+    const li = bubble('nib', broke ? 'Nib is out of picture credit right now. Say “try the example” to step into one I built earlier.' : `I couldn’t finish the room: ${e.message} Say “try again” or “Home”, or tap here.`);
     li.tabIndex = 0; li.setAttribute('role', 'button'); li.style.cursor = 'pointer';
     li.onclick = () => retry?.();
+    li.onkeydown = e => { if (!e.repeat && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); li.onclick?.(); } };
     step = 'building';
-    if (broke) { step = 'home'; sayAndListen('Nib is out of picture credit right now. Say try the example, and I’ll take you into one I built earlier.', 12000); return; }
-    sayAndListen(L.broke, 10000, true, false);
+    if (broke) {
+      step = 'home';
+      if (!listeningPaused && !leaving && !document.hidden) sayAndListen('Nib is out of picture credit right now. Say try the example, and I’ll take you into one I built earlier.', 12000);
+      return;
+    }
+    if (!listeningPaused && !leaving && !document.hidden) sayAndListen(L.broke, 10000, true, false);
+  } finally {
+    clearInterval(tick); clearTimeout(nudge);
   }
 }
 
