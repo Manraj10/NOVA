@@ -410,7 +410,12 @@ function drawBoxes(items) {
 
 // A question about what's in front of you: a fresh look and a short spoken answer.
 let askUntil = 0, asking = false, talking = false;
-const reply = text => { talking = true; return voice.say(text).finally(() => { talking = false; }); };
+const reply = text => {
+  const owner = {};
+  reply.current = owner;
+  talking = true;
+  return voice.say(text).finally(() => { if (reply.current === owner) talking = false; });
+};
 async function askAbout(question) {
   if (document.hidden || typeof question !== 'string' || !question.trim()) return;
   askAbout.current?.controller.abort(); // a new question supersedes the old one
